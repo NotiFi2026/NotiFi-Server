@@ -1,0 +1,26 @@
+language: "ko-KR"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "src/main/java/**/*.java"
+      instructions: |
+        Spring Boot 4.1.0 + Java 21 백엔드입니다.
+        - 컨트롤러는 얇게, 비즈니스 로직은 서비스 레이어에 위치
+        - 모든 외부 API 응답은 공통 envelope(success/data/error)로 감싸야 함
+        - API/DB 필드는 snake_case 통일
+        - JPA N+1 문제 여부 확인
+        - 내부 API(/internal/v1)는 X-Internal-Key 인증, 외부 API(/api/v1)는 JWT 인증
+        - tb_sensing_event, tb_escalation_step, tb_notification 은 append-only
+        - 위험도 재계산 금지 — AI 서버 산출값 그대로 저장
+
+chat:
+  auto_reply: true
