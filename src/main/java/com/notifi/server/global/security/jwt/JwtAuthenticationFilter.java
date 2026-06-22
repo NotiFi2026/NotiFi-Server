@@ -1,6 +1,6 @@
 package com.notifi.server.global.security.jwt;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.response.ApiResponse;
 import jakarta.servlet.FilterChain;
