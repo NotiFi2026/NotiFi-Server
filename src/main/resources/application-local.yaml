@@ -1,0 +1,7 @@
+logging:
+  level:
+    com.notifi: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%-5level] [%X{traceId:-no-trace}] %logger{30} - %msg%n"

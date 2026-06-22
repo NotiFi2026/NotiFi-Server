@@ -1,0 +1,6 @@
+logging:
+  structured:
+    format:
+      console: ecs   # JSON 한 줄/이벤트 → stdout → CloudWatch
+  level:
+    com.notifi: INFO
