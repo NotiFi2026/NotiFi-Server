@@ -19,7 +19,8 @@ public record ApiResponse<T>(
         return new ApiResponse<>(true, data, null);
     }
 
-    public static ApiResponse<Void> success() {
+    /** 응답 바디 없는 성공 (204 No Content 용). */
+    public static ApiResponse<Void> ok() {
         return new ApiResponse<>(true, null, null);
     }
 
