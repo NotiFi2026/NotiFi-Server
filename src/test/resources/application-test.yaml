@@ -1,0 +1,17 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+
+jwt:
+  secret: test-secret-key-for-unit-tests-must-be-32ch!
+  access-token-ttl: 3600
+  refresh-token-ttl: 604800
+
+internal:
+  api-key: test-internal-key
+
+cors:
+  allowed-origins: "*"
