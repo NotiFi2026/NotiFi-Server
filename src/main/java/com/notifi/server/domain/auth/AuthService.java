@@ -2,8 +2,9 @@ package com.notifi.server.domain.auth;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
+import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
-import com.notifi.server.global.exception.ErrorCode;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
 import com.notifi.server.domain.user.User;
 import com.notifi.server.domain.user.UserRepository;
@@ -28,14 +29,14 @@ public class AuthService {
     public SignupResponse signup(SignupRequest request) {
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
         User user = User.create(email, passwordEncoder.encode(request.password()), request.name(), request.role());
         try {
             return SignupResponse.from(userRepository.save(user));
         } catch (DataIntegrityViolationException e) {
             // 동시 요청 경합으로 unique 제약 위반 시 409로 변환
-            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
     }
 
@@ -43,10 +44,10 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         String email = normalizeEmail(request.email());
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.INVALID_CREDENTIALS));
 
         if (!user.isActive() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+            throw new BusinessException(CommonErrorCode.INVALID_CREDENTIALS);
         }
 
         String role = user.getRole().name();
@@ -65,10 +66,10 @@ public class AuthService {
         Long userId = (Long) auth.getPrincipal();
 
         String stored = refreshTokenStore.find(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+                .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
 
         if (!stored.equals(request.refreshToken())) {
-            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         String role = auth.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");

@@ -1,6 +1,7 @@
 package com.notifi.server.global.security;
 
 import tools.jackson.databind.ObjectMapper;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.exception.ErrorCode;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.security.internal.InternalApiKeyFilter;
@@ -75,9 +76,9 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((req, res, ex) ->
-                                writeError(res, ErrorCode.INVALID_CREDENTIALS))
+                                writeError(res, CommonErrorCode.INVALID_CREDENTIALS))
                         .accessDeniedHandler((req, res, ex) ->
-                                writeError(res, ErrorCode.ACCESS_DENIED))
+                                writeError(res, CommonErrorCode.ACCESS_DENIED))
                 )
                 .build();
     }

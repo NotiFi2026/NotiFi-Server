@@ -1,5 +1,6 @@
 package com.notifi.server.global.exception;
 
+import com.notifi.server.global.exception.CommonErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,7 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/test/business")
         void throwBusiness() {
-            throw new BusinessException(ErrorCode.CARE_TARGET_NOT_FOUND);
+            throw new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND);
         }
 
         @GetMapping("/test/unhandled")
@@ -52,7 +53,7 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/test/business"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.code").value("CARE_TARGET_NOT_FOUND"))
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.error.message").isNotEmpty());
     }
 

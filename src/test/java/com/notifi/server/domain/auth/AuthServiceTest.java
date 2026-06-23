@@ -2,8 +2,9 @@ package com.notifi.server.domain.auth;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
+import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
-import com.notifi.server.global.exception.ErrorCode;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
 import com.notifi.server.domain.user.Role;
 import com.notifi.server.domain.user.User;
@@ -60,7 +61,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.signup(new SignupRequest("a@b.com", "pw123456", "김보호", Role.GUARDIAN)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
+                .isEqualTo(AuthErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
     // ── login ─────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(new LoginRequest("none@b.com", "pw")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+                .isEqualTo(CommonErrorCode.INVALID_CREDENTIALS);
     }
 
     @Test
@@ -103,7 +104,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "wrong")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+                .isEqualTo(CommonErrorCode.INVALID_CREDENTIALS);
     }
 
     @Test
@@ -116,7 +117,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "pw123456")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+                .isEqualTo(CommonErrorCode.INVALID_CREDENTIALS);
         // bcrypt 연산 호출 없어야 함 (비활성 계정은 조기 차단)
         then(passwordEncoder).shouldHaveNoInteractions();
     }
@@ -151,7 +152,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("token")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
+                .isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
     }
 
     @Test
@@ -165,7 +166,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("incoming")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
+                .isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
     }
 
     // ── logout ────────────────────────────────────────────────────────────

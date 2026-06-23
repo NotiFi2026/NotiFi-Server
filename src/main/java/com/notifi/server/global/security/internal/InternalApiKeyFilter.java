@@ -1,7 +1,7 @@
 package com.notifi.server.global.security.internal;
 
 import tools.jackson.databind.ObjectMapper;
-import com.notifi.server.global.exception.ErrorCode;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.response.ApiResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -50,11 +50,11 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
 
         if (!MessageDigest.isEqual(expectedKey, actual)) {
             log.warn("[InternalApi] 인증 실패 — uri={}", request.getRequestURI());
-            response.setStatus(ErrorCode.INVALID_INTERNAL_KEY.getStatus().value());
+            response.setStatus(CommonErrorCode.INVALID_INTERNAL_KEY.getStatus().value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.getWriter().write(
-                    objectMapper.writeValueAsString(ApiResponse.error(ErrorCode.INVALID_INTERNAL_KEY))
+                    objectMapper.writeValueAsString(ApiResponse.error(CommonErrorCode.INVALID_INTERNAL_KEY))
             );
             return;
         }

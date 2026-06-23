@@ -1,6 +1,7 @@
 package com.notifi.server.global.exception;
 
 import com.notifi.server.global.response.ApiResponse;
+import com.notifi.server.global.exception.CommonErrorCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -41,41 +42,41 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining(", "));
         log.warn("[Validation] {}", detail);
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error(ErrorCode.INVALID_INPUT_VALUE, detail));
+                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, detail));
     }
 
     /** @Validated 메서드 파라미터 검증 실패 */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<?>> handleConstraintViolation(ConstraintViolationException e) {
         log.warn("[ConstraintViolation] {}", e.getMessage());
-        return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.INVALID_INPUT_VALUE));
+        return ResponseEntity.badRequest().body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE));
     }
 
     /** JSON 파싱 실패 (요청 바디 형식 오류) */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<?>> handleNotReadable(HttpMessageNotReadableException e) {
         log.warn("[NotReadable] {}", e.getMessage());
-        return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.INVALID_INPUT_VALUE));
+        return ResponseEntity.badRequest().body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE));
     }
 
     /** 지원하지 않는 HTTP 메서드 */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<?>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
-        return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.getStatus())
-                .body(ApiResponse.error(ErrorCode.METHOD_NOT_ALLOWED));
+        return ResponseEntity.status(CommonErrorCode.METHOD_NOT_ALLOWED.getStatus())
+                .body(ApiResponse.error(CommonErrorCode.METHOD_NOT_ALLOWED));
     }
 
     /** 존재하지 않는 경로 (404) */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<?>> handleNoResource(NoResourceFoundException e) {
-        return ResponseEntity.status(ErrorCode.RESOURCE_NOT_FOUND.getStatus())
-                .body(ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND));
+        return ResponseEntity.status(CommonErrorCode.RESOURCE_NOT_FOUND.getStatus())
+                .body(ApiResponse.error(CommonErrorCode.RESOURCE_NOT_FOUND));
     }
 
     /** 최후 방어선 — 처리되지 않은 예외. 스택 포함 error 로깅, 클라이언트엔 상세 미노출 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<?>> handleException(Exception e) {
         log.error("[UnhandledException] {}", e.getMessage(), e);
-        return ResponseEntity.internalServerError().body(ApiResponse.error(ErrorCode.INTERNAL_ERROR));
+        return ResponseEntity.internalServerError().body(ApiResponse.error(CommonErrorCode.INTERNAL_ERROR));
     }
 }
