@@ -1,6 +1,6 @@
 package com.notifi.server;
 
-import com.notifi.server.user.UserRepository;
+import com.notifi.server.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;

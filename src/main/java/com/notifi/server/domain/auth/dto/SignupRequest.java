@@ -1,6 +1,6 @@
-package com.notifi.server.auth.dto;
+package com.notifi.server.domain.auth.dto;
 
-import com.notifi.server.user.Role;
+import com.notifi.server.domain.user.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

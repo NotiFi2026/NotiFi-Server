@@ -1,4 +1,4 @@
-package com.notifi.server.auth.dto;
+package com.notifi.server.domain.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
 

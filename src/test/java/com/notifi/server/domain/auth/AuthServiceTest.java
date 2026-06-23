@@ -1,13 +1,13 @@
-package com.notifi.server.auth;
+package com.notifi.server.domain.auth;
 
-import com.notifi.server.auth.dto.*;
-import com.notifi.server.auth.token.RefreshTokenStore;
+import com.notifi.server.domain.auth.dto.*;
+import com.notifi.server.domain.auth.token.RefreshTokenStore;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.ErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
-import com.notifi.server.user.Role;
-import com.notifi.server.user.User;
-import com.notifi.server.user.UserRepository;
+import com.notifi.server.domain.user.Role;
+import com.notifi.server.domain.user.User;
+import com.notifi.server.domain.user.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

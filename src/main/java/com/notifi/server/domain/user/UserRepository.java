@@ -1,4 +1,4 @@
-package com.notifi.server.user;
+package com.notifi.server.domain.user;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

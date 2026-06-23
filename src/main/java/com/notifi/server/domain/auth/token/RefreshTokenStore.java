@@ -1,4 +1,4 @@
-package com.notifi.server.auth.token;
+package com.notifi.server.domain.auth.token;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

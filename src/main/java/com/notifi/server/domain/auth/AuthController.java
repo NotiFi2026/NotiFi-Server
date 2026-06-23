@@ -1,6 +1,6 @@
-package com.notifi.server.auth;
+package com.notifi.server.domain.auth;
 
-import com.notifi.server.auth.dto.*;
+import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
