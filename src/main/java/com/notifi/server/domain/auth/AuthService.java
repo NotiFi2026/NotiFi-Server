@@ -72,6 +72,14 @@ public class AuthService {
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
+        // 유효 토큰 확인 후에만 DB 조회 — 비활성 계정 갱신 차단 (login 차단과 대칭)
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
+        if (!user.isActive()) {
+            refreshTokenStore.delete(userId);   // 세션 완전 종료
+            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
         String role = auth.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
         String newAccess = jwtTokenProvider.createAccessToken(userId, role);
         String newRefresh = jwtTokenProvider.createRefreshToken(userId, role);

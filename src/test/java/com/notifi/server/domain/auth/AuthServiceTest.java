@@ -12,6 +12,7 @@ import com.notifi.server.domain.user.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -70,17 +71,18 @@ class AuthServiceTest {
     @DisplayName("login: 정상 로그인 후 토큰·사용자 정보 반환")
     void login_success() {
         User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
+        ReflectionTestUtils.setField(user, "id", 1L);   // DB 생성 id 시뮬레이션
         given(userRepository.findByEmail("a@b.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("pw123456", "hashed")).willReturn(true);
-        given(jwtTokenProvider.createAccessToken(any(), eq("GUARDIAN"))).willReturn("access");
-        given(jwtTokenProvider.createRefreshToken(any(), eq("GUARDIAN"))).willReturn("refresh");
+        given(jwtTokenProvider.createAccessToken(eq(1L), eq("GUARDIAN"))).willReturn("access");
+        given(jwtTokenProvider.createRefreshToken(eq(1L), eq("GUARDIAN"))).willReturn("refresh");
 
         LoginResponse resp = authService.login(new LoginRequest("a@b.com", "pw123456"));
 
         assertThat(resp.accessToken()).isEqualTo("access");
         assertThat(resp.refreshToken()).isEqualTo("refresh");
         assertThat(resp.user().name()).isEqualTo("김보호");
-        then(refreshTokenStore).should().save(any(), eq("refresh"));
+        then(refreshTokenStore).should().save(eq(1L), eq("refresh"));
     }
 
     @Test
@@ -127,10 +129,12 @@ class AuthServiceTest {
     @Test
     @DisplayName("refresh: 정상 갱신 + 토큰 회전")
     void refresh_success() {
+        User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
         var auth = new UsernamePasswordAuthenticationToken(
                 1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
         given(jwtTokenProvider.getAuthentication("old-refresh")).willReturn(auth);
         given(refreshTokenStore.find(1L)).willReturn(Optional.of("old-refresh"));
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(jwtTokenProvider.createAccessToken(1L, "GUARDIAN")).willReturn("new-access");
         given(jwtTokenProvider.createRefreshToken(1L, "GUARDIAN")).willReturn("new-refresh");
 
@@ -139,6 +143,24 @@ class AuthServiceTest {
         assertThat(resp.accessToken()).isEqualTo("new-access");
         assertThat(resp.refreshToken()).isEqualTo("new-refresh");
         then(refreshTokenStore).should().save(1L, "new-refresh");
+    }
+
+    @Test
+    @DisplayName("refresh: 비활성 계정 → 토큰 삭제 후 INVALID_REFRESH_TOKEN")
+    void refresh_inactiveUser() {
+        User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
+        user.deactivate();
+        var auth = new UsernamePasswordAuthenticationToken(
+                1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
+        given(jwtTokenProvider.getAuthentication("old-refresh")).willReturn(auth);
+        given(refreshTokenStore.find(1L)).willReturn(Optional.of("old-refresh"));
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.refresh(new RefreshRequest("old-refresh")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        then(refreshTokenStore).should().delete(1L);   // 세션 강제 종료 확인
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.notifi.server.domain.auth;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.global.response.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,16 +18,19 @@ public class AuthController {
 
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
+    @SecurityRequirements   // 공개 엔드포인트 — Swagger 자물쇠 표시 제거
     public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
         return ApiResponse.success(authService.signup(request));
     }
 
     @PostMapping("/login")
+    @SecurityRequirements   // 공개 엔드포인트 — Swagger 자물쇠 표시 제거
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
     }
 
     @PostMapping("/refresh")
+    @SecurityRequirements   // 공개 엔드포인트 — Swagger 자물쇠 표시 제거
     public ApiResponse<TokenResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         return ApiResponse.success(authService.refresh(request));
     }
