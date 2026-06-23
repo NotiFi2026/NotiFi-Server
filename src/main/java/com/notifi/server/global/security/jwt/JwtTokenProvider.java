@@ -1,7 +1,7 @@
 package com.notifi.server.global.security.jwt;
 
 import com.notifi.server.global.exception.BusinessException;
-import com.notifi.server.global.exception.ErrorCode;
+import com.notifi.server.global.exception.CommonErrorCode;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -86,10 +86,10 @@ public class JwtTokenProvider {
                     .parseSignedClaims(token)
                     .getPayload();
         } catch (ExpiredJwtException e) {
-            throw new BusinessException(ErrorCode.TOKEN_EXPIRED);
+            throw new BusinessException(CommonErrorCode.TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {
             log.debug("[JWT] 토큰 파싱 실패: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+            throw new BusinessException(CommonErrorCode.INVALID_CREDENTIALS);
         }
     }
 }

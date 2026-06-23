@@ -1,6 +1,7 @@
 package com.notifi.server.global.security;
 
 import tools.jackson.databind.ObjectMapper;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.exception.ErrorCode;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.security.internal.InternalApiKeyFilter;
@@ -68,15 +69,16 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .authorizeHttpRequests(a -> a
+                        .requestMatchers("/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((req, res, ex) ->
-                                writeError(res, ErrorCode.INVALID_CREDENTIALS))
+                                writeError(res, CommonErrorCode.INVALID_CREDENTIALS))
                         .accessDeniedHandler((req, res, ex) ->
-                                writeError(res, ErrorCode.ACCESS_DENIED))
+                                writeError(res, CommonErrorCode.ACCESS_DENIED))
                 )
                 .build();
     }
@@ -91,6 +93,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().denyAll()
                 )
                 .build();
