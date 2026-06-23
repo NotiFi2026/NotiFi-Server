@@ -106,6 +106,21 @@ class AuthServiceTest {
                 .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
     }
 
+    @Test
+    @DisplayName("login: 비활성 계정 → INVALID_CREDENTIALS (계정 상태 열거 방지)")
+    void login_inactiveUser() {
+        User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
+        user.deactivate();
+        given(userRepository.findByEmail("a@b.com")).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "pw123456")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+        // bcrypt 연산 호출 없어야 함 (비활성 계정은 조기 차단)
+        then(passwordEncoder).shouldHaveNoInteractions();
+    }
+
     // ── refresh ───────────────────────────────────────────────────────────
 
     @Test

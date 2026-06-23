@@ -8,9 +8,12 @@ import com.notifi.server.global.security.jwt.JwtTokenProvider;
 import com.notifi.server.user.User;
 import com.notifi.server.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -23,21 +26,26 @@ public class AuthService {
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
-        String email = request.email().toLowerCase();
+        String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
         User user = User.create(email, passwordEncoder.encode(request.password()), request.name(), request.role());
-        return SignupResponse.from(userRepository.save(user));
+        try {
+            return SignupResponse.from(userRepository.save(user));
+        } catch (DataIntegrityViolationException e) {
+            // 동시 요청 경합으로 unique 제약 위반 시 409로 변환
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
     }
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        String email = request.email().toLowerCase();
+        String email = normalizeEmail(request.email());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (!user.isActive() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
@@ -74,5 +82,9 @@ public class AuthService {
 
     public void logout(Long userId) {
         refreshTokenStore.delete(userId);
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.toLowerCase(Locale.ROOT);
     }
 }

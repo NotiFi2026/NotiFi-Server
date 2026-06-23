@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.generator.EventType;
 
 import java.time.Instant;
 
@@ -46,7 +47,7 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    @Generated
+    @Generated(event = {EventType.INSERT, EventType.UPDATE})
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private Instant updatedAt;
 
@@ -65,5 +66,9 @@ public class User {
 
     public void recordLogin() {
         this.lastLoginAt = Instant.now();
+    }
+
+    public void deactivate() {
+        this.isActive = false;
     }
 }
