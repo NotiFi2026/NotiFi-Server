@@ -39,6 +39,8 @@ public enum ErrorCode {
     // ── 내부 API ──────────────────────────────────────
     INVALID_INTERNAL_KEY(HttpStatus.UNAUTHORIZED,
             "INVALID_INTERNAL_KEY", "내부 API 인증 키가 올바르지 않습니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED,
+            "INVALID_REFRESH_TOKEN", "리프레시 토큰이 유효하지 않습니다."),
 
     // ── 요청 검증 ─────────────────────────────────────
     INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST,
