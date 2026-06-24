@@ -28,14 +28,13 @@ public class CareTargetService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND));
 
-        CareTarget careTarget = CareTarget.create(
+        CareTarget careTarget = careTargetRepository.save(CareTarget.create(
                 request.name(),
                 request.birthDate(),
                 request.gender(),
                 request.address(),
                 request.emergencyMemo()
-        );
-        careTargetRepository.save(careTarget);
+        ));
 
         RelationshipType type = (user.getRole() == Role.SOCIAL_WORKER)
                 ? RelationshipType.SOCIAL_WORKER
