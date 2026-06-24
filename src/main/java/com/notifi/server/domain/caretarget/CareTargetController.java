@@ -4,6 +4,7 @@ import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetSummaryResponse;
+import com.notifi.server.domain.caretarget.dto.CareTargetUpdateRequest;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.response.PageResponse;
 import jakarta.validation.Valid;
@@ -45,5 +46,14 @@ public class CareTargetController {
             @PathVariable Long id
     ) {
         return ApiResponse.success(careTargetService.getDetail(userId, id));
+    }
+
+    @PatchMapping("/{id}")
+    public ApiResponse<CareTargetDetailResponse> update(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @Valid @RequestBody CareTargetUpdateRequest request
+    ) {
+        return ApiResponse.success(careTargetService.update(userId, id, request));
     }
 }

@@ -61,4 +61,14 @@ public class CareTarget {
         ct.emergencyMemo = emergencyMemo;
         return ct;
     }
+
+    /** null 인 필드는 미변경. */
+    public void update(String name, LocalDate birthDate, Gender gender,
+                       String address, String emergencyMemo) {
+        if (name != null) this.name = name;
+        if (birthDate != null) this.birthDate = birthDate;
+        if (gender != null) this.gender = gender;
+        if (address != null) this.address = address;
+        if (emergencyMemo != null) this.emergencyMemo = emergencyMemo;
+    }
 }

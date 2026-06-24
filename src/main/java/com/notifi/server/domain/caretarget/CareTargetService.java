@@ -4,6 +4,7 @@ import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetSummaryResponse;
+import com.notifi.server.domain.caretarget.dto.CareTargetUpdateRequest;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.user.Role;
 import com.notifi.server.domain.user.User;
@@ -60,6 +61,19 @@ public class CareTargetService {
     @Transactional(readOnly = true)
     public CareTargetDetailResponse getDetail(Long userId, Long careTargetId) {
         CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        return CareTargetDetailResponse.from(cr);
+    }
+
+    @Transactional
+    public CareTargetDetailResponse update(Long userId, Long careTargetId, CareTargetUpdateRequest request) {
+        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        cr.getCareTarget().update(
+                request.name(),
+                request.birthDate(),
+                request.gender(),
+                request.address(),
+                request.emergencyMemo()
+        );
         return CareTargetDetailResponse.from(cr);
     }
 
