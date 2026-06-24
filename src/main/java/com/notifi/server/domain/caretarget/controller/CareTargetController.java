@@ -10,6 +10,7 @@ import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.response.PageResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -36,9 +37,15 @@ public class CareTargetController {
     @GetMapping
     public ApiResponse<PageResponse<CareTargetSummaryResponse>> getMyCareTargets(
             @AuthenticationPrincipal Long userId,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+            @PageableDefault(size = 20) Pageable pageable
     ) {
-        return ApiResponse.success(careTargetService.getMyCareTargets(userId, pageable));
+        // 클라이언트가 보낸 정렬(Swagger 기본 ["string"] 등 무효 프로퍼티 포함)을 신뢰하지 않고
+        // 서버가 안전한 고정 정렬(createdAt desc)로 덮어써 JPQL 정렬 검증 500을 차단
+        Pageable safe = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ApiResponse.success(careTargetService.getMyCareTargets(userId, safe));
     }
 
     @GetMapping("/{id}")
