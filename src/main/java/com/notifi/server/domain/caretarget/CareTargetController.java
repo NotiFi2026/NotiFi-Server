@@ -2,6 +2,7 @@ package com.notifi.server.domain.caretarget;
 
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
+import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetSummaryResponse;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.response.PageResponse;
@@ -36,5 +37,13 @@ public class CareTargetController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ApiResponse.success(careTargetService.getMyCareTargets(userId, pageable));
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<CareTargetDetailResponse> getDetail(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id
+    ) {
+        return ApiResponse.success(careTargetService.getDetail(userId, id));
     }
 }
