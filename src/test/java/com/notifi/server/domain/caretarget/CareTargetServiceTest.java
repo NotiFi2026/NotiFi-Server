@@ -2,10 +2,15 @@ package com.notifi.server.domain.caretarget;
 
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
+import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetSummaryResponse;
+import com.notifi.server.domain.caretarget.dto.CareTargetUpdateRequest;
+import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.user.Role;
 import com.notifi.server.domain.user.User;
 import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.global.exception.BusinessException;
+import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.response.PageResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -53,7 +59,6 @@ class CareTargetServiceTest {
         CareTargetCreateResponse resp = careTargetService.register(1L, req);
 
         assertThat(resp.careTargetId()).isEqualTo(45L);
-        // CareRelationship이 isPrimary=true로 저장되는지 검증
         then(careRelationshipRepository).should().save(
                 argThat(cr -> cr.isPrimary() && cr.getRelationshipType() == RelationshipType.FAMILY)
         );
@@ -103,6 +108,100 @@ class CareTargetServiceTest {
         assertThat(summary.currentRiskLevel()).isNull();
         assertThat(summary.deviceCount()).isZero();
         assertThat(result.totalElements()).isEqualTo(1);
+    }
+
+    // ── getDetail (C3) ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getDetail: 관계 있는 노인 상세 정보 반환")
+    void getDetail_success() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, "서울시 강남구", "당뇨 약 복용");
+        ReflectionTestUtils.setField(ct, "id", 45L);
+
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(cr));
+
+        CareTargetDetailResponse result = careTargetService.getDetail(1L, 45L);
+
+        assertThat(result.careTargetId()).isEqualTo(45L);
+        assertThat(result.name()).isEqualTo("박순자");
+        assertThat(result.gender()).isEqualTo(Gender.FEMALE);
+        assertThat(result.address()).isEqualTo("서울시 강남구");
+        assertThat(result.isPrimary()).isTrue();
+    }
+
+    @Test
+    @DisplayName("getDetail: 관계 없고 노인 존재 → 403 ACCESS_DENIED")
+    void getDetail_noRelationship_targetExists_accessDenied() {
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.empty());
+        given(careTargetRepository.existsById(45L)).willReturn(true);
+
+        assertThatThrownBy(() -> careTargetService.getDetail(1L, 45L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+    }
+
+    @Test
+    @DisplayName("getDetail: 노인 없음(soft-deleted 포함) → 404 CARE_TARGET_NOT_FOUND")
+    void getDetail_targetNotFound() {
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 99L)).willReturn(Optional.empty());
+        given(careTargetRepository.existsById(99L)).willReturn(false);
+
+        assertThatThrownBy(() -> careTargetService.getDetail(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
+    }
+
+    // ── update (C4) ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("update: name만 변경하면 나머지 필드는 유지")
+    void update_partialName() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, "서울시 강남구", null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(cr));
+
+        CareTargetUpdateRequest req = new CareTargetUpdateRequest("박순이", null, null, null, null);
+        CareTargetDetailResponse result = careTargetService.update(1L, 45L, req);
+
+        assertThat(result.name()).isEqualTo("박순이");
+        assertThat(result.gender()).isEqualTo(Gender.FEMALE);     // 유지
+        assertThat(result.address()).isEqualTo("서울시 강남구");    // 유지
+    }
+
+    // ── delete (C5) ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("delete: 주 보호자가 삭제하면 deletedAt 설정")
+    void delete_primaryGuardian_softDeletes() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(cr));
+
+        careTargetService.delete(1L, 45L);
+
+        assertThat(ct.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("delete: 주 보호자 아닌 경우 → 403 ACCESS_DENIED")
+    void delete_nonPrimary_accessDenied() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+
+        CareRelationship cr = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 2);
+        given(careRelationshipRepository.findByUserIdAndCareTargetId(2L, 45L)).willReturn(Optional.of(cr));
+
+        assertThatThrownBy(() -> careTargetService.delete(2L, 45L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
     }
 
     // ── argThat helper ────────────────────────────────────────────────────
