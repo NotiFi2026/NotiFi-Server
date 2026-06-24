@@ -1,8 +1,8 @@
 package com.notifi.server;
 
-import com.notifi.server.domain.caretarget.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.CareTargetRepository;
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;

@@ -1,4 +1,4 @@
-package com.notifi.server.domain.auth;
+package com.notifi.server.domain.auth.service;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
@@ -6,8 +6,8 @@ import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
-import com.notifi.server.domain.user.User;
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.user.entity.User;
+import com.notifi.server.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;

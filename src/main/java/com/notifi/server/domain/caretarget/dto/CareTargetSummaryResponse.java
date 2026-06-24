@@ -1,6 +1,6 @@
 package com.notifi.server.domain.caretarget.dto;
 
-import com.notifi.server.domain.caretarget.CareRelationship;
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
 
 import java.time.Instant;
 

@@ -1,14 +1,19 @@
-package com.notifi.server.domain.caretarget;
+package com.notifi.server.domain.caretarget.service;
 
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetSummaryResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetUpdateRequest;
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.user.Role;
-import com.notifi.server.domain.user.User;
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.user.entity.Role;
+import com.notifi.server.domain.user.entity.User;
+import com.notifi.server.domain.user.repository.UserRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.response.PageResponse;

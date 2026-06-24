@@ -1,5 +1,6 @@
-package com.notifi.server.domain.caretarget;
+package com.notifi.server.domain.caretarget.repository;
 
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

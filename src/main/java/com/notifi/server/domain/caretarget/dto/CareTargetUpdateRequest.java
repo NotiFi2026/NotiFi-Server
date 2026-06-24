@@ -1,6 +1,6 @@
 package com.notifi.server.domain.caretarget.dto;
 
-import com.notifi.server.domain.caretarget.Gender;
+import com.notifi.server.domain.caretarget.entity.Gender;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;

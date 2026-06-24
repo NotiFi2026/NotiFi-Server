@@ -1,8 +1,8 @@
 package com.notifi.server.domain.caretarget.dto;
 
-import com.notifi.server.domain.caretarget.CareRelationship;
-import com.notifi.server.domain.caretarget.CareTarget;
-import com.notifi.server.domain.caretarget.Gender;
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.entity.Gender;
 
 import java.time.Instant;
 import java.time.LocalDate;

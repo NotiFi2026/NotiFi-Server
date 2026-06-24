@@ -1,6 +1,7 @@
-package com.notifi.server.domain.auth;
+package com.notifi.server.domain.auth.controller;
 
 import com.notifi.server.domain.auth.dto.*;
+import com.notifi.server.domain.auth.service.AuthService;
 import com.notifi.server.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.Valid;

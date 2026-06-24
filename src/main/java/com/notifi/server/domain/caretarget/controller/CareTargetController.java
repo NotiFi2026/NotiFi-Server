@@ -1,5 +1,6 @@
-package com.notifi.server.domain.caretarget;
+package com.notifi.server.domain.caretarget.controller;
 
+import com.notifi.server.domain.caretarget.service.CareTargetService;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateRequest;
 import com.notifi.server.domain.caretarget.dto.CareTargetCreateResponse;
 import com.notifi.server.domain.caretarget.dto.CareTargetDetailResponse;

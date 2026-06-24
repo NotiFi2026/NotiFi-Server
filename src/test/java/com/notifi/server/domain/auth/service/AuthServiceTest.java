@@ -1,4 +1,4 @@
-package com.notifi.server.domain.auth;
+package com.notifi.server.domain.auth.service;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
@@ -6,9 +6,9 @@ import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
-import com.notifi.server.domain.user.Role;
-import com.notifi.server.domain.user.User;
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.user.entity.Role;
+import com.notifi.server.domain.user.entity.User;
+import com.notifi.server.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
