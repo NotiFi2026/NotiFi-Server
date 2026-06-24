@@ -71,4 +71,8 @@ public class CareTarget {
         if (address != null) this.address = address;
         if (emergencyMemo != null) this.emergencyMemo = emergencyMemo;
     }
+
+    public void softDelete() {
+        this.deletedAt = Instant.now();
+    }
 }

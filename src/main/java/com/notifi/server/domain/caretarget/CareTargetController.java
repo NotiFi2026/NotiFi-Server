@@ -56,4 +56,13 @@ public class CareTargetController {
     ) {
         return ApiResponse.success(careTargetService.update(userId, id, request));
     }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id
+    ) {
+        careTargetService.delete(userId, id);
+        return ApiResponse.ok();
+    }
 }

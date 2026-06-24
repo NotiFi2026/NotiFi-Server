@@ -77,6 +77,15 @@ public class CareTargetService {
         return CareTargetDetailResponse.from(cr);
     }
 
+    @Transactional
+    public void delete(Long userId, Long careTargetId) {
+        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        if (!cr.isPrimary()) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+        cr.getCareTarget().softDelete();
+    }
+
     // ── private ──────────────────────────────────────────────────────────────
 
     /**
