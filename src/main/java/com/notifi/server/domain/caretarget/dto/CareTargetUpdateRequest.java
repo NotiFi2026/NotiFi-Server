@@ -10,5 +10,5 @@ public record CareTargetUpdateRequest(
         LocalDate birthDate,
         Gender gender,
         @Size(max = 255) String address,
-        String emergencyMemo
+        @Size(max = 1000) String emergencyMemo
 ) {}
