@@ -1,4 +1,4 @@
-package com.notifi.server.domain.auth;
+package com.notifi.server.domain.auth.service;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
@@ -6,10 +6,11 @@ import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
-import com.notifi.server.domain.user.User;
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.user.entity.User;
+import com.notifi.server.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,8 +62,9 @@ public class AuthService {
     }
 
     public TokenResponse refresh(RefreshRequest request) {
-        // 토큰 파싱으로 userId 추출 (만료·위조 시 BusinessException)
-        var auth = jwtTokenProvider.getAuthentication(request.refreshToken());
+        // JwtTokenProvider는 액세스/리프레시 토큰을 구분하지 않고 INVALID_CREDENTIALS를 던지므로
+        // 리프레시 컨텍스트(만료·위조·형식 오류)에서는 INVALID_REFRESH_TOKEN으로 재매핑
+        var auth = parseRefreshToken(request.refreshToken());
         Long userId = (Long) auth.getPrincipal();
 
         String stored = refreshTokenStore.find(userId)
@@ -91,6 +93,14 @@ public class AuthService {
 
     public void logout(Long userId) {
         refreshTokenStore.delete(userId);
+    }
+
+    private Authentication parseRefreshToken(String token) {
+        try {
+            return jwtTokenProvider.getAuthentication(token);
+        } catch (BusinessException e) {
+            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
     }
 
     private static String normalizeEmail(String email) {

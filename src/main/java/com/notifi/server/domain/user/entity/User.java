@@ -1,4 +1,4 @@
-package com.notifi.server.domain.user;
+package com.notifi.server.domain.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;

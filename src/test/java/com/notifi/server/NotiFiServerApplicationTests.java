@@ -1,6 +1,8 @@
 package com.notifi.server;
 
-import com.notifi.server.domain.user.UserRepository;
+import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -13,6 +15,8 @@ class NotiFiServerApplicationTests {
 
     // 테스트 프로파일은 DataSource/JPA/Redis auto-config를 제외 → 인프라 빈만 Mock으로 대체
     @MockitoBean UserRepository userRepository;
+    @MockitoBean CareTargetRepository careTargetRepository;
+    @MockitoBean CareRelationshipRepository careRelationshipRepository;
     @MockitoBean StringRedisTemplate stringRedisTemplate;
 
     @Test

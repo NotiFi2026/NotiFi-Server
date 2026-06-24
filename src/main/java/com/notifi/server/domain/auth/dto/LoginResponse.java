@@ -1,7 +1,7 @@
 package com.notifi.server.domain.auth.dto;
 
-import com.notifi.server.domain.user.Role;
-import com.notifi.server.domain.user.User;
+import com.notifi.server.domain.user.entity.Role;
+import com.notifi.server.domain.user.entity.User;
 
 public record LoginResponse(String accessToken, String refreshToken, UserSummary user) {
 
