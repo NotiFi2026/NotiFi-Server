@@ -28,6 +28,14 @@ public class RelationshipController {
         return ApiResponse.success(relationshipService.issueInviteCode(userId, id, request));
     }
 
+    // R1-c: 초대코드 미리보기 (코드 유지 — 수락 다이얼로그 정보 제공)
+    @GetMapping("/api/v1/invite-codes/{code}")
+    public ApiResponse<InvitePreviewResponse> previewInviteCode(
+            @PathVariable String code
+    ) {
+        return ApiResponse.success(relationshipService.previewInviteCode(code));
+    }
+
     // R1-b: 초대코드 수락 (인증 사용자, 일회성)
     @PostMapping("/api/v1/invite-codes/{code}/accept")
     @ResponseStatus(HttpStatus.CREATED)

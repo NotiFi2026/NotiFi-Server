@@ -19,6 +19,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -49,6 +50,26 @@ public class RelationshipService {
         String code = inviteCodeStore.issue(payload);
         String inviteUrl = inviteLinkBaseUrl + "/" + code;
         return new InviteCodeCreateResponse(code, inviteUrl, inviteCodeStore.nextExpiresAt());
+    }
+
+    // ── R1-c: 초대코드 미리보기 (코드 유지) ────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public InvitePreviewResponse previewInviteCode(String code) {
+        InviteCodePayload payload = inviteCodeStore.find(code)
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+
+        CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+
+        String inviterName = userRepository.findById(payload.issuedBy())
+                .map(u -> u.getName())
+                .orElse(null);
+
+        Instant expiresAt = inviteCodeStore.expiresAt(code).orElse(null);
+
+        return new InvitePreviewResponse(careTarget.getId(), careTarget.getName(),
+                inviterName, payload.relationshipType(), expiresAt);
     }
 
     // ── R1-b: 초대코드 수락 ──────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 @Component
 @RequiredArgsConstructor
@@ -40,6 +41,24 @@ public class InviteCodeStore {
 
     public Instant nextExpiresAt() {
         return Instant.now().plusSeconds(codeTtlSeconds);
+    }
+
+    /** 코드를 유지한 채 페이로드만 조회 — 미리보기용. */
+    public Optional<InviteCodePayload> find(String code) {
+        String json = redisTemplate.opsForValue().get(key(code));
+        if (json == null) return Optional.empty();
+        try {
+            return Optional.of(objectMapper.readValue(json, InviteCodePayload.class));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /** Redis TTL 기반 실제 만료시각 반환 — 미리보기용. */
+    public Optional<Instant> expiresAt(String code) {
+        Long ttl = redisTemplate.getExpire(key(code), TimeUnit.SECONDS);
+        if (ttl == null || ttl < 0) return Optional.empty();
+        return Optional.of(Instant.now().plusSeconds(ttl));
     }
 
     /** 코드 조회와 삭제를 원자적으로 수행 — 동시 수락 방지. */
