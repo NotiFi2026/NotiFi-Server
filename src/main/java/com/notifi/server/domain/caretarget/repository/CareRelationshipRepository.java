@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface CareRelationshipRepository extends JpaRepository<CareRelationship, Long> {
@@ -16,4 +17,10 @@ public interface CareRelationshipRepository extends JpaRepository<CareRelationsh
 
     @Query("SELECT cr FROM CareRelationship cr JOIN FETCH cr.careTarget WHERE cr.userId = :userId AND cr.careTarget.id = :careTargetId")
     Optional<CareRelationship> findByUserIdAndCareTargetId(@Param("userId") Long userId, @Param("careTargetId") Long careTargetId);
+
+    @Query("SELECT CASE WHEN COUNT(cr) > 0 THEN TRUE ELSE FALSE END FROM CareRelationship cr WHERE cr.userId = :userId AND cr.careTarget.id = :careTargetId")
+    boolean existsByUserIdAndCareTargetId(@Param("userId") Long userId, @Param("careTargetId") Long careTargetId);
+
+    @Query("SELECT cr FROM CareRelationship cr WHERE cr.careTarget.id = :careTargetId ORDER BY cr.notifyPriority ASC, cr.id ASC")
+    List<CareRelationship> findGuardiansByCareTargetId(@Param("careTargetId") Long careTargetId);
 }
