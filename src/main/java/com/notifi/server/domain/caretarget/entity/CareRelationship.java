@@ -50,4 +50,10 @@ public class CareRelationship {
         cr.notifyPriority = notifyPriority;
         return cr;
     }
+
+    /** null 인 필드는 미변경. */
+    public void update(RelationshipType type, Short notifyPriority) {
+        if (type != null) this.relationshipType = type;
+        if (notifyPriority != null) this.notifyPriority = notifyPriority;
+    }
 }
