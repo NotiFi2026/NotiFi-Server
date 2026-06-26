@@ -4,5 +4,6 @@ import java.time.Instant;
 
 public record InviteCodeCreateResponse(
         String code,
+        String inviteUrl,
         Instant expiresAt
 ) {}

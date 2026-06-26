@@ -14,6 +14,7 @@ import com.notifi.server.domain.user.repository.UserRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,9 @@ public class RelationshipService {
     private final UserRepository userRepository;
     private final InviteCodeStore inviteCodeStore;
 
+    @Value("${invite.link-base-url}")
+    private String inviteLinkBaseUrl;
+
     // ── R1-a: 초대코드 발급 ──────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
@@ -43,7 +47,8 @@ public class RelationshipService {
                 priority, userId);
 
         String code = inviteCodeStore.issue(payload);
-        return new InviteCodeCreateResponse(code, inviteCodeStore.nextExpiresAt());
+        String inviteUrl = inviteLinkBaseUrl + "/" + code;
+        return new InviteCodeCreateResponse(code, inviteUrl, inviteCodeStore.nextExpiresAt());
     }
 
     // ── R1-b: 초대코드 수락 ──────────────────────────────────────────────────
