@@ -13,8 +13,9 @@ CREATE TABLE tb_device (
     created_at       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT uq_device_uid  UNIQUE (device_uid),
-    CONSTRAINT ck_device_status    CHECK (status    IN ('ACTIVE', 'INACTIVE', 'ERROR')),
+    CONSTRAINT uq_device_uid          UNIQUE (device_uid),
+    CONSTRAINT ck_device_uid_not_blank CHECK (length(trim(device_uid)) > 0),
+    CONSTRAINT ck_device_status        CHECK (status    IN ('ACTIVE', 'INACTIVE', 'ERROR')),
     CONSTRAINT ck_device_node_role CHECK (node_role IN ('SENDER', 'RECEIVER') OR node_role IS NULL)
 );
 

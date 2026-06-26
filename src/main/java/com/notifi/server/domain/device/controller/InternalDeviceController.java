@@ -22,8 +22,8 @@ public class InternalDeviceController {
             summary = "[I4] 노드 헬스체크",
             description = "ESP32 노드가 주기적으로 생존 신호를 보내면 last_seen_at을 갱신한다. (권한: X-Internal-Key)"
     )
-    @PostMapping("/{deviceUid}/heartbeat")
-    public ApiResponse<Void> heartbeat(@PathVariable String deviceUid) {
+    @PostMapping("/{device_uid}/heartbeat")
+    public ApiResponse<Void> heartbeat(@PathVariable("device_uid") String deviceUid) {
         deviceService.heartbeat(deviceUid);
         return ApiResponse.ok();
     }

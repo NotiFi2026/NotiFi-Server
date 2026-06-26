@@ -53,6 +53,7 @@ CREATE TABLE tb_escalation (
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
+    CONSTRAINT uq_escalation_risk_assessment UNIQUE (risk_assessment_id),
     CONSTRAINT ck_escalation_status CHECK (status IN ('IN_PROGRESS', 'RESOLVED', 'CANCELLED')),
     CONSTRAINT ck_escalation_resolution_type CHECK (
         resolution_type IN ('FALSE_ALARM', 'SELF_RESOLVED', 'GUARDIAN_HANDLED', 'EMERGENCY_DISPATCHED')
@@ -60,8 +61,7 @@ CREATE TABLE tb_escalation (
     )
 );
 
-CREATE INDEX idx_escalation_status               ON tb_escalation (status);
-CREATE INDEX idx_escalation_risk_assessment_id   ON tb_escalation (risk_assessment_id);
+CREATE INDEX idx_escalation_status ON tb_escalation (status);
 
 CREATE TRIGGER trg_escalation_updated_at
     BEFORE UPDATE ON tb_escalation
