@@ -34,6 +34,9 @@ jwt:
 internal:
   api-key: ${INTERNAL_API_KEY:change-me-before-deploy}
 
+invite:
+  code-ttl: ${INVITE_CODE_TTL:86400}
+
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
