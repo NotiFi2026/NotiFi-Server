@@ -31,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -133,6 +134,25 @@ class RelationshipServiceTest {
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
     }
 
+    @Test
+    @DisplayName("previewInviteCode: 초대자가 탈퇴한 경우 → inviter_name null로 정상 반환")
+    void previewInviteCode_inviterGone_inviterNameNull() {
+        InviteCodePayload payload = new InviteCodePayload(45L, RelationshipType.FAMILY, (short) 1, 1L);
+        CareTarget ct = careTarget(45L);
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+
+        given(inviteCodeStore.find("AB3CD7EF")).willReturn(Optional.of(payload));
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
+        given(userRepository.findById(1L)).willReturn(Optional.empty());
+        given(inviteCodeStore.expiresAt("AB3CD7EF")).willReturn(Optional.of(expiresAt));
+
+        InvitePreviewResponse resp = relationshipService.previewInviteCode("AB3CD7EF");
+
+        assertThat(resp.careTargetName()).isEqualTo("박순자");
+        assertThat(resp.inviterName()).isNull();
+        assertThat(resp.expiresAt()).isEqualTo(expiresAt);
+    }
+
     // ── acceptInviteCode (R1-b) ────────────────────────────────────────────
 
     @Test
@@ -154,9 +174,12 @@ class RelationshipServiceTest {
 
         assertThat(resp.relationshipId()).isEqualTo(7L);
         assertThat(resp.careTargetId()).isEqualTo(45L);
-        then(careRelationshipRepository).should().save(
-                argThat(cr -> !cr.isPrimary() && cr.getRelationshipType() == RelationshipType.FAMILY)
-        );
+        then(careRelationshipRepository).should().save(argThat(cr ->
+                cr.getUserId() == 2L
+                        && cr.getCareTarget().getId() == 45L
+                        && cr.getRelationshipType() == RelationshipType.FAMILY
+                        && cr.getNotifyPriority() == (short) 2
+                        && !cr.isPrimary()));
     }
 
     @Test
@@ -350,7 +373,4 @@ class RelationshipServiceTest {
         return u;
     }
 
-    private static <T> T argThat(org.mockito.ArgumentMatcher<T> matcher) {
-        return org.mockito.ArgumentMatchers.argThat(matcher);
-    }
 }
