@@ -13,6 +13,7 @@ import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,16 +37,20 @@ public class DeviceService {
             throw new BusinessException(DeviceErrorCode.DEVICE_ALREADY_EXISTS);
         }
 
-        Device device = deviceRepository.save(Device.create(
-                careTargetId,
-                request.deviceUid(),
-                request.room(),
-                request.positionLabel(),
-                request.nodeRole(),
-                request.firmwareVersion()
-        ));
-
-        return new DeviceCreateResponse(device.getId());
+        try {
+            Device device = deviceRepository.save(Device.create(
+                    careTargetId,
+                    request.deviceUid(),
+                    request.room(),
+                    request.positionLabel(),
+                    request.nodeRole(),
+                    request.firmwareVersion()
+            ));
+            return new DeviceCreateResponse(device.getId());
+        } catch (DataIntegrityViolationException e) {
+            // 동시 요청 경합으로 device_uid unique 위반 시 409로 변환
+            throw new BusinessException(DeviceErrorCode.DEVICE_ALREADY_EXISTS);
+        }
     }
 
     // ── D2: 노드 목록 조회 ────────────────────────────────────────────────────

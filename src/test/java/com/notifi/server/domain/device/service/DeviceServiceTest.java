@@ -25,6 +25,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.dao.DataIntegrityViolationException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -83,6 +85,20 @@ class DeviceServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(CommonErrorCode.ACCESS_DENIED));
+    }
+
+    @Test
+    @DisplayName("register: 동시 요청으로 DB unique 위반 → DEVICE_ALREADY_EXISTS")
+    void register_concurrentDuplicate_throws() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
+        given(deviceRepository.existsByDeviceUid("AA:BB:CC:DD:EE:FF")).willReturn(false);
+        given(deviceRepository.save(any())).willThrow(new DataIntegrityViolationException("dup"));
+
+        DeviceCreateRequest req = new DeviceCreateRequest("AA:BB:CC:DD:EE:FF", null, null, null, null);
+        assertThatThrownBy(() -> deviceService.register(1L, 45L, req))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(DeviceErrorCode.DEVICE_ALREADY_EXISTS));
     }
 
     @Test

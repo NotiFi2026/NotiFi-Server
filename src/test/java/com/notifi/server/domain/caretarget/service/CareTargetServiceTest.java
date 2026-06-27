@@ -120,6 +120,24 @@ class CareTargetServiceTest {
         assertThat(result.totalElements()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("getMyCareTargets: deviceCountMap에 실제 카운트 있으면 summary.deviceCount 반영")
+    void getMyCareTargets_withDeviceCount() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+
+        PageRequest pageable = PageRequest.of(0, 20);
+        given(careRelationshipRepository.findByUserIdWithCareTarget(1L, pageable))
+                .willReturn(new PageImpl<>(List.of(cr), pageable, 1));
+        given(deviceRepository.deviceCountMap(List.of(45L))).willReturn(Map.of(45L, 3));
+
+        PageResponse<CareTargetSummaryResponse> result = careTargetService.getMyCareTargets(1L, pageable);
+
+        assertThat(result.content().get(0).deviceCount()).isEqualTo(3);
+    }
+
     // ── getDetail (C3) ────────────────────────────────────────────────────
 
     @Test
