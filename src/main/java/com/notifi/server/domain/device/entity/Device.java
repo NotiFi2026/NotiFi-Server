@@ -75,4 +75,11 @@ public class Device {
     public void recordHeartbeat(Instant at) {
         this.lastSeenAt = at;
     }
+
+    public void update(String room, String positionLabel, NodeRole nodeRole, DeviceStatus status) {
+        if (room != null) this.room = room;
+        if (positionLabel != null) this.positionLabel = positionLabel;
+        if (nodeRole != null) this.nodeRole = nodeRole;
+        if (status != null) this.status = status;
+    }
 }

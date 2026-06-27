@@ -11,6 +11,7 @@ import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -23,6 +24,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 public class CareTargetService {
@@ -30,6 +34,7 @@ public class CareTargetService {
     private final CareTargetRepository careTargetRepository;
     private final CareRelationshipRepository careRelationshipRepository;
     private final UserRepository userRepository;
+    private final DeviceRepository deviceRepository;
 
     @Transactional
     public CareTargetCreateResponse register(Long userId, CareTargetCreateRequest request) {
@@ -59,7 +64,13 @@ public class CareTargetService {
         Page<CareRelationship> page = careRelationshipRepository
                 .findByUserIdWithCareTarget(userId, pageable);
 
-        Page<CareTargetSummaryResponse> mapped = page.map(cr -> CareTargetSummaryResponse.from(cr));
+        List<Long> careTargetIds = page.getContent().stream()
+                .map(cr -> cr.getCareTarget().getId())
+                .toList();
+        Map<Long, Integer> countMap = deviceRepository.deviceCountMap(careTargetIds);
+
+        Page<CareTargetSummaryResponse> mapped = page.map(cr ->
+                CareTargetSummaryResponse.from(cr, countMap.getOrDefault(cr.getCareTarget().getId(), 0)));
         return PageResponse.from(mapped);
     }
 
