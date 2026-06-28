@@ -7,7 +7,6 @@ import com.notifi.server.domain.escalation.service.EscalationService;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.response.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +28,6 @@ public class EscalationController {
             summary = "[E1] 에스컬레이션 목록",
             description = "해당 노인에 대해 발생한 에스컬레이션 목록을 최신순으로 페이지 반환한다. (권한: 관계)"
     )
-    @SecurityRequirements
     @GetMapping("/care-targets/{id}/escalations")
     public ApiResponse<PageResponse<EscalationSummaryResponse>> listEscalations(
             @AuthenticationPrincipal Long userId,
@@ -45,7 +43,6 @@ public class EscalationController {
             summary = "[E2] 에스컬레이션 상세",
             description = "단일 에스컬레이션과 단계별 진행 로그(step_order 오름차순)를 반환한다. (권한: 관계)"
     )
-    @SecurityRequirements
     @GetMapping("/escalations/{id}")
     public ApiResponse<EscalationDetailResponse> getDetail(
             @AuthenticationPrincipal Long userId,
@@ -61,7 +58,6 @@ public class EscalationController {
                     + "resolution_type은 GUARDIAN_HANDLED 또는 FALSE_ALARM만 허용. "
                     + "이미 종료된 에스컬레이션 재요청 시 409. (권한: 관계)"
     )
-    @SecurityRequirements
     @PostMapping("/escalations/{id}/resolve")
     public ApiResponse<EscalationDetailResponse> resolve(
             @AuthenticationPrincipal Long userId,

@@ -7,7 +7,6 @@ import com.notifi.server.domain.sensing.service.SensingQueryService;
 import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.response.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -31,7 +30,6 @@ public class SensingQueryController {
     @Operation(summary = "[S1] 실시간 상태 대시보드",
                description = "앱 메인 화면용. 현재 위험도, 최근 활동, 노드 상태를 한 번에 반환한다. " +
                              "today_metrics·active_escalation은 미구현 도메인 의존으로 null 반환. (권한: 관계)")
-    @SecurityRequirements
     @GetMapping("/{id}/status")
     public ApiResponse<CareTargetStatusResponse> getStatus(
             @AuthenticationPrincipal Long userId,
@@ -42,8 +40,7 @@ public class SensingQueryController {
 
     @Operation(summary = "[S2] 감지 이벤트 목록",
                description = "낙상·호흡이상·무활동 등 감지 이벤트를 페이지 단위로 반환한다. " +
-                             "event_type·from·to 필터 지원. has_replay는 I5(클립 적재) 구현 전까지 false. (권한: 관계)")
-    @SecurityRequirements
+                             "event_type·from·to 필터 지원. has_replay는 I5로 포즈클립 적재 시 true. (권한: 관계)")
     @GetMapping("/{id}/events")
     public ApiResponse<PageResponse<SensingEventSummaryResponse>> getEvents(
             @AuthenticationPrincipal Long userId,
