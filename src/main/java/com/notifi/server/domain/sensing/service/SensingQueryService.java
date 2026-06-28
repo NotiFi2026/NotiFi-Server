@@ -12,6 +12,7 @@ import com.notifi.server.domain.sensing.entity.EventType;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
+import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -24,8 +25,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,6 +37,7 @@ public class SensingQueryService {
 
     private final SensingEventRepository sensingEventRepository;
     private final RiskAssessmentRepository riskAssessmentRepository;
+    private final PoseClipRepository poseClipRepository;
     private final DeviceRepository deviceRepository;
     private final CareRelationshipRepository careRelationshipRepository;
     private final CareTargetRepository careTargetRepository;
@@ -85,7 +89,7 @@ public class SensingQueryService {
         Page<SensingEvent> page = sensingEventRepository
                 .findEvents(careTargetId, eventType, from, to, pageable);
 
-        // 위험도 일괄 로드 (N+1 방지)
+        // 위험도·포즈클립 일괄 로드 (N+1 방지)
         List<Long> eventIds = page.getContent().stream()
                 .map(SensingEvent::getId)
                 .toList();
@@ -93,9 +97,12 @@ public class SensingQueryService {
                 .findBySensingEventIdIn(eventIds)
                 .stream()
                 .collect(Collectors.toMap(RiskAssessment::getSensingEventId, ra -> ra));
+        Set<Long> clipEventIds = eventIds.isEmpty()
+                ? Set.of()
+                : new HashSet<>(poseClipRepository.findExistingSensingEventIds(eventIds));
 
         Page<SensingEventSummaryResponse> mapped = page.map(e ->
-                SensingEventSummaryResponse.of(e, raMap.get(e.getId())));
+                SensingEventSummaryResponse.of(e, raMap.get(e.getId()), clipEventIds.contains(e.getId())));
         return PageResponse.from(mapped);
     }
 

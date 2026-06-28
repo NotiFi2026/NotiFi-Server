@@ -15,9 +15,9 @@ public record SensingEventSummaryResponse(
         Short riskScore,
         RiskLevel riskLevel,
         Instant detectedAt,
-        boolean hasReplay // tb_pose_clip/I5 미구현 → 항상 false
+        boolean hasReplay // I5로 포즈클립 적재 시 true
 ) {
-    public static SensingEventSummaryResponse of(SensingEvent e, RiskAssessment ra) {
+    public static SensingEventSummaryResponse of(SensingEvent e, RiskAssessment ra, boolean hasReplay) {
         return new SensingEventSummaryResponse(
                 e.getId(),
                 e.getEventType(),
@@ -25,7 +25,7 @@ public record SensingEventSummaryResponse(
                 ra != null ? ra.getRiskScore() : null,
                 ra != null ? ra.getRiskLevel() : null,
                 e.getDetectedAt(),
-                false
+                hasReplay
         );
     }
 }

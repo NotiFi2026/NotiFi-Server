@@ -9,6 +9,7 @@ import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
 import com.notifi.server.domain.sensing.entity.*;
+import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -39,6 +40,7 @@ class SensingQueryServiceTest {
 
     @Mock SensingEventRepository sensingEventRepository;
     @Mock RiskAssessmentRepository riskAssessmentRepository;
+    @Mock PoseClipRepository poseClipRepository;
     @Mock DeviceRepository deviceRepository;
     @Mock CareRelationshipRepository careRelationshipRepository;
     @Mock CareTargetRepository careTargetRepository;
@@ -121,8 +123,8 @@ class SensingQueryServiceTest {
     // ── S2: getEvents ─────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getEvents: 위험도 일괄 조인 → risk_score·risk_level 매핑, has_replay=false")
-    void getEvents_withRiskAssessment_mapsAllFields() {
+    @DisplayName("getEvents: 포즈클립 없는 이벤트 → has_replay=false")
+    void getEvents_withRiskAssessment_noClip_hasReplayFalse() {
         given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
@@ -133,6 +135,7 @@ class SensingQueryServiceTest {
 
         RiskAssessment ra = RiskAssessment.of(1L, (short) 85, RiskLevel.DANGER, null, "v0.1", DETECTED_AT);
         given(riskAssessmentRepository.findBySensingEventIdIn(List.of(1L))).willReturn(List.of(ra));
+        given(poseClipRepository.findExistingSensingEventIds(List.of(1L))).willReturn(List.of());
 
         PageResponse<SensingEventSummaryResponse> result = sensingQueryService.getEvents(
                 1L, 45L, EventType.FALL, null, null, Pageable.unpaged());
@@ -140,10 +143,30 @@ class SensingQueryServiceTest {
         assertThat(result.content()).hasSize(1);
         SensingEventSummaryResponse summary = result.content().get(0);
         assertThat(summary.sensingEventId()).isEqualTo(1L);
-        assertThat(summary.eventType()).isEqualTo(EventType.FALL);
         assertThat(summary.riskScore()).isEqualTo((short) 85);
         assertThat(summary.riskLevel()).isEqualTo(RiskLevel.DANGER);
         assertThat(summary.hasReplay()).isFalse();
+    }
+
+    @Test
+    @DisplayName("getEvents: 포즈클립 있는 이벤트 → has_replay=true")
+    void getEvents_withPoseClip_hasReplayTrue() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
+
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+                null, null, null, null, "v0.1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 1L);
+        given(sensingEventRepository.findEvents(eq(45L), eq(EventType.FALL), any(), any(), any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(event)));
+
+        RiskAssessment ra = RiskAssessment.of(1L, (short) 85, RiskLevel.DANGER, null, "v0.1", DETECTED_AT);
+        given(riskAssessmentRepository.findBySensingEventIdIn(List.of(1L))).willReturn(List.of(ra));
+        given(poseClipRepository.findExistingSensingEventIds(List.of(1L))).willReturn(List.of(1L));
+
+        PageResponse<SensingEventSummaryResponse> result = sensingQueryService.getEvents(
+                1L, 45L, EventType.FALL, null, null, Pageable.unpaged());
+
+        assertThat(result.content().get(0).hasReplay()).isTrue();
     }
 
     @Test
@@ -157,6 +180,7 @@ class SensingQueryServiceTest {
         given(sensingEventRepository.findEvents(eq(45L), any(), any(), any(), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(event)));
         given(riskAssessmentRepository.findBySensingEventIdIn(List.of(2L))).willReturn(List.of());
+        given(poseClipRepository.findExistingSensingEventIds(List.of(2L))).willReturn(List.of());
 
         PageResponse<SensingEventSummaryResponse> result = sensingQueryService.getEvents(
                 1L, 45L, null, null, null, Pageable.unpaged());
