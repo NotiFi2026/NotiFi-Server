@@ -59,4 +59,12 @@ public class Escalation {
         e.startedAt = Instant.now();
         return e;
     }
+
+    /** E3: 보호자가 확인 완료하여 에스컬레이션을 해제한다. */
+    public void resolve(ResolutionType type, String memo) {
+        this.status = EscalationStatus.RESOLVED;
+        this.resolutionType = type;
+        this.resolutionMemo = memo;
+        this.resolvedAt = Instant.now();
+    }
 }

@@ -1,6 +1,7 @@
 package com.notifi.server.domain.escalation.controller;
 
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
+import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
 import com.notifi.server.domain.escalation.dto.EscalationSummaryResponse;
 import com.notifi.server.domain.escalation.service.EscalationService;
 import com.notifi.server.global.response.ApiResponse;
@@ -8,6 +9,7 @@ import com.notifi.server.global.response.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,5 +52,22 @@ public class EscalationController {
             @PathVariable Long id
     ) {
         return ApiResponse.success(escalationService.getDetail(userId, id));
+    }
+
+    @Operation(
+            summary = "[E3] 보호자 확인·해제",
+            description = "보호자가 '확인 완료'를 눌러 에스컬레이션을 해제한다. "
+                    + "이후 119 자동 신고 단계로 진행되지 않는다. "
+                    + "resolution_type은 GUARDIAN_HANDLED 또는 FALSE_ALARM만 허용. "
+                    + "이미 종료된 에스컬레이션 재요청 시 409. (권한: 관계)"
+    )
+    @SecurityRequirements
+    @PostMapping("/escalations/{id}/resolve")
+    public ApiResponse<EscalationDetailResponse> resolve(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @Valid @RequestBody EscalationResolveRequest request
+    ) {
+        return ApiResponse.success(escalationService.resolve(userId, id, request));
     }
 }

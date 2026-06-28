@@ -4,11 +4,14 @@ import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
+import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepResponse;
 import com.notifi.server.domain.escalation.dto.EscalationSummaryResponse;
 import com.notifi.server.domain.escalation.entity.Escalation;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.escalation.entity.EscalationStep;
+import com.notifi.server.domain.escalation.entity.ResolutionType;
 import com.notifi.server.domain.escalation.entity.StepType;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
@@ -92,6 +95,29 @@ public class EscalationService {
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         Long careTargetId = resolveCareTargetId(escalation);
         verifyRelationship(userId, careTargetId);
+        List<EscalationStep> steps =
+                escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
+        return EscalationDetailResponse.of(escalation, steps);
+    }
+
+    // ── E3: 보호자 확인·해제 ──────────────────────────────────────────────────
+    @Transactional
+    public EscalationDetailResponse resolve(Long userId, Long escalationId, EscalationResolveRequest req) {
+        Escalation escalation = escalationRepository.findById(escalationId)
+                .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
+        Long careTargetId = resolveCareTargetId(escalation);
+        verifyRelationship(userId, careTargetId);
+
+        if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
+            throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
+        }
+        if (req.resolutionType() != ResolutionType.GUARDIAN_HANDLED
+                && req.resolutionType() != ResolutionType.FALSE_ALARM) {
+            throw new BusinessException(EscalationErrorCode.INVALID_RESOLUTION_TYPE);
+        }
+
+        escalation.resolve(req.resolutionType(), req.memo());
+
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return EscalationDetailResponse.of(escalation, steps);
