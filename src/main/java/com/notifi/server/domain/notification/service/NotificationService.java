@@ -60,9 +60,13 @@ public class NotificationService {
             );
 
             List<FcmToken> tokens = tokensByUser.getOrDefault(userId, List.of());
-            boolean anySent = tokens.stream()
-                    .anyMatch(token -> fcmSender.send(token.getToken(),
-                            guardianMessage.title(), body));
+            // anyMatch 단락 방지 — 보호자가 다기기 등록 시 모든 토큰에 발송
+            boolean anySent = false;
+            for (FcmToken token : tokens) {
+                if (fcmSender.send(token.getToken(), guardianMessage.title(), body)) {
+                    anySent = true;
+                }
+            }
 
             if (anySent) {
                 notification.markSent();
