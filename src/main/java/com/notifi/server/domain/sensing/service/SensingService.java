@@ -4,11 +4,16 @@ import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.entity.Escalation;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
+import com.notifi.server.domain.sensing.dto.PoseClipIngestRequest;
+import com.notifi.server.domain.sensing.dto.PoseClipIngestResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestRequest;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestResponse;
+import com.notifi.server.domain.sensing.entity.PoseClip;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
+import com.notifi.server.domain.sensing.exception.SensingErrorCode;
+import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -26,6 +31,7 @@ public class SensingService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final EscalationRepository escalationRepository;
     private final CareTargetRepository careTargetRepository;
+    private final PoseClipRepository poseClipRepository;
 
     @Transactional
     public SensingEventIngestResponse ingest(SensingEventIngestRequest req) {
@@ -58,6 +64,26 @@ public class SensingService {
         }
 
         return new SensingEventIngestResponse(event.getId(), ra.getId(), false, null);
+    }
+
+    @Transactional
+    public PoseClipIngestResponse ingestPoseClip(Long sensingEventId, PoseClipIngestRequest req) {
+        if (!sensingEventRepository.existsById(sensingEventId)) {
+            throw new BusinessException(SensingErrorCode.SENSING_EVENT_NOT_FOUND);
+        }
+
+        Optional<PoseClip> existing = poseClipRepository.findBySensingEventId(sensingEventId);
+        if (existing.isPresent()) {
+            return new PoseClipIngestResponse(existing.get().getId(), sensingEventId);
+        }
+
+        PoseClip clip = poseClipRepository.save(PoseClip.of(
+                sensingEventId, req.modelVersion(), req.jointSchema(),
+                req.fps().shortValue(), req.frameCount(), req.durationMs(),
+                req.windowStartAt(), req.windowEndAt(),
+                req.frames(), req.eventTimeline()
+        ));
+        return new PoseClipIngestResponse(clip.getId(), sensingEventId);
     }
 
     private boolean shouldEscalate(RiskLevel level) {
