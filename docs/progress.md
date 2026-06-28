@@ -1,6 +1,6 @@
 # API 구현 진행도
 
-**last-updated**: 2026-06-28 | **완료**: 24 / 32
+**last-updated**: 2026-06-28 | **완료**: 27 / 32
 
 > MVP 우선 구현 기준이므로 API 개수·순서는 변경될 수 있고, 중간 항목이 생략되거나 나중에 추가될 수 있음.
 
@@ -59,9 +59,9 @@
 
 | 코드 | Method | Path | 설명 | 상태 |
 |---|---|---|---|---|
-| E1 | GET | `/api/v1/care-targets/{id}/escalations` | 해당 노인의 에스컬레이션 목록 | ⬜ |
-| E2 | GET | `/api/v1/escalations/{id}` | 에스컬레이션 상세 + 단계별 진행 로그 | ⬜ |
-| E3 | POST | `/api/v1/escalations/{id}/resolve` | 보호자가 앱에서 "확인 완료" → 119 자동신고 중단 | ⬜ |
+| E1 | GET | `/api/v1/care-targets/{id}/escalations` | 해당 노인의 에스컬레이션 목록 | ✅ |
+| E2 | GET | `/api/v1/escalations/{id}` | 에스컬레이션 상세 + 단계별 진행 로그 | ✅ |
+| E3 | POST | `/api/v1/escalations/{id}/resolve` | 보호자가 앱에서 "확인 완료" → 119 자동신고 중단 | ✅ |
 
 ## Notification (N) — 알림 수신 및 FCM 토큰
 

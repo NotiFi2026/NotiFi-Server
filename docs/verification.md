@@ -670,6 +670,80 @@ Content-Type: application/json
 
 ---
 
+### 32. E1 — 에스컬레이션 목록 조회
+
+> 스텝 18(I1)에서 `{{escalation_id}}`가 생성된 노인 기준.
+
+```
+GET /api/v1/care-targets/{{care_target_id}}/escalations?page=0&size=20
+Authorization: Bearer {{access_token}}
+```
+
+| 항목 | 기대값 |
+|---|---|
+| Status | `200 OK` |
+| `data.content[0].escalation_id` | `{{escalation_id}}` |
+| `data.content[0].status` | `"IN_PROGRESS"` (아직 해제 전) |
+| `data.content[0].resolution_type` | `null` |
+| `data.total_elements` | `1` 이상 |
+
+**권한 검증**: `{{access_token_2}}`(관계 없는 user2) → `403 ACCESS_DENIED`
+
+**미존재 노인 확인**: `{{care_target_id}}` 대신 `99999` → `404 CARE_TARGET_NOT_FOUND`
+
+---
+
+### 33. E2 — 에스컬레이션 상세 조회
+
+```
+GET /api/v1/escalations/{{escalation_id}}
+Authorization: Bearer {{access_token}}
+```
+
+| 항목 | 기대값 |
+|---|---|
+| Status | `200 OK` |
+| `data.escalation_id` | `{{escalation_id}}` |
+| `data.status` | `"IN_PROGRESS"` |
+| `data.steps` | 스텝 30·31에서 기록한 VOICE_CHECK·GUARDIAN_NOTIFY 배열 (step_order 오름차순) |
+| `data.steps[0].step_type` | `"VOICE_CHECK"` |
+| `data.steps[1].step_type` | `"GUARDIAN_NOTIFY"` |
+
+**권한 검증**: `{{access_token_2}}`(관계 없는 user2) → `403 ACCESS_DENIED`
+
+**미존재 에스컬레이션 확인**: `99999` → `404 ESCALATION_NOT_FOUND`
+
+---
+
+### 34. E3 — 보호자 확인·해제
+
+```
+POST /api/v1/escalations/{{escalation_id}}/resolve
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "resolution_type": "GUARDIAN_HANDLED",
+  "memo": "직접 방문 확인 완료. 낙상 없음."
+}
+```
+
+| 항목 | 기대값 |
+|---|---|
+| Status | `200 OK` |
+| `data.status` | `"RESOLVED"` |
+| `data.resolution_type` | `"GUARDIAN_HANDLED"` |
+| `data.resolution_memo` | `"직접 방문 확인 완료. 낙상 없음."` |
+| `data.resolved_at` | 현재 시각 UTC |
+
+**재요청(중복) 확인**: 동일 요청 재호출 → `409 ESCALATION_ALREADY_RESOLVED`
+
+**허용 안 되는 resolution_type**: `"SELF_RESOLVED"` → `400 INVALID_RESOLUTION_TYPE`
+
+**FALSE_ALARM 확인**: 새 I1 이벤트(DANGER)로 에스컬레이션 신규 생성 후 `resolution_type: "FALSE_ALARM"` → `200 OK`, `data.status: "RESOLVED"`
+
+---
+
 ### 25. A4 — 로그아웃 _(항상 마지막)_
 
 ```
