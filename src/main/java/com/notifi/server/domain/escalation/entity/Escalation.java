@@ -35,6 +35,9 @@ public class Escalation {
     @Column(columnDefinition = "TEXT")
     private String summary;
 
+    @Column(name = "resolution_memo", columnDefinition = "TEXT")
+    private String resolutionMemo;
+
     @Column(name = "started_at", nullable = false)
     private Instant startedAt;
 
