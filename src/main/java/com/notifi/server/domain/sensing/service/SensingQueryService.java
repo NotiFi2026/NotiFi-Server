@@ -7,11 +7,14 @@ import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
 import com.notifi.server.domain.sensing.dto.DeviceStatusItem;
+import com.notifi.server.domain.sensing.dto.PoseClipResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
 import com.notifi.server.domain.sensing.entity.EventType;
+import com.notifi.server.domain.sensing.entity.PoseClip;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
+import com.notifi.server.domain.sensing.exception.SensingErrorCode;
 import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
@@ -104,6 +107,17 @@ public class SensingQueryService {
         Page<SensingEventSummaryResponse> mapped = page.map(e ->
                 SensingEventSummaryResponse.of(e, raMap.get(e.getId()), clipEventIds.contains(e.getId())));
         return PageResponse.from(mapped);
+    }
+
+    // ── S3: 복원 스켈레톤 리플레이 조회 ──────────────────────────────────────────
+    @Transactional(readOnly = true)
+    public PoseClipResponse getPoseClip(Long userId, Long sensingEventId) {
+        SensingEvent event = sensingEventRepository.findById(sensingEventId)
+                .orElseThrow(() -> new BusinessException(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
+        verifyRelationship(userId, event.getCareTargetId());
+        PoseClip clip = poseClipRepository.findBySensingEventId(sensingEventId)
+                .orElseThrow(() -> new BusinessException(SensingErrorCode.POSE_CLIP_NOT_FOUND));
+        return PoseClipResponse.from(clip);
     }
 
     // ── private ───────────────────────────────────────────────────────────────
