@@ -4,7 +4,10 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
+import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
 import com.notifi.server.domain.notification.repository.FcmTokenRepository;
+import com.notifi.server.domain.notification.repository.NotificationRepository;
+import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -27,7 +30,10 @@ class NotiFiServerApplicationTests {
     @MockitoBean SensingEventRepository sensingEventRepository;
     @MockitoBean RiskAssessmentRepository riskAssessmentRepository;
     @MockitoBean EscalationRepository escalationRepository;
+    @MockitoBean EscalationStepRepository escalationStepRepository;
     @MockitoBean FcmTokenRepository fcmTokenRepository;
+    @MockitoBean NotificationRepository notificationRepository;
+    @MockitoBean PoseClipRepository poseClipRepository;
 
     @Test
     void contextLoads() {
