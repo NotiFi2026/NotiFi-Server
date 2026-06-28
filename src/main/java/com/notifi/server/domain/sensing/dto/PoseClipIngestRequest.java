@@ -1,5 +1,6 @@
 package com.notifi.server.domain.sensing.dto;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -19,6 +20,7 @@ public record PoseClipIngestRequest(
 
         @NotNull
         @Min(1)
+        @Max(32767)   // SMALLINT 상한 — 초과 시 shortValue() 절단 방지
         Integer fps,
 
         @NotNull

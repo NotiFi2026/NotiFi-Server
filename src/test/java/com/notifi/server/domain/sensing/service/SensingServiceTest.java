@@ -26,6 +26,8 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -164,7 +166,7 @@ class SensingServiceTest {
     // ── I5: ingestPoseClip ────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("ingestPoseClip: 신규 클립을 저장하고 pose_clip_id를 반환한다")
+    @DisplayName("ingestPoseClip: 신규 클립을 저장하고 pose_clip_id를 반환한다 — fps·frameCount·window 매핑 검증")
     void ingestPoseClip_new_savesAndReturns() {
         PoseClip clip = poseClip();
         ReflectionTestUtils.setField(clip, "id", 10L);
@@ -177,7 +179,14 @@ class SensingServiceTest {
 
         assertThat(res.poseClipId()).isEqualTo(10L);
         assertThat(res.sensingEventId()).isEqualTo(1L);
-        then(poseClipRepository).should().save(any(PoseClip.class));
+
+        ArgumentCaptor<PoseClip> captor = ArgumentCaptor.forClass(PoseClip.class);
+        then(poseClipRepository).should().save(captor.capture());
+        PoseClip saved = captor.getValue();
+        assertThat(saved.getFps()).isEqualTo((short) 10);
+        assertThat(saved.getFrameCount()).isEqualTo(300);
+        assertThat(saved.getWindowStartAt()).isEqualTo(DETECTED_AT);
+        assertThat(saved.getWindowEndAt()).isEqualTo(DETECTED_AT.plusSeconds(30));
     }
 
     @Test
