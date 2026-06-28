@@ -35,6 +35,9 @@ public class Escalation {
     @Column(columnDefinition = "TEXT")
     private String summary;
 
+    @Column(name = "resolution_memo", columnDefinition = "TEXT")
+    private String resolutionMemo;
+
     @Column(name = "started_at", nullable = false)
     private Instant startedAt;
 
@@ -55,5 +58,13 @@ public class Escalation {
         e.status = EscalationStatus.IN_PROGRESS;
         e.startedAt = Instant.now();
         return e;
+    }
+
+    /** E3: 보호자가 확인 완료하여 에스컬레이션을 해제한다. */
+    public void resolve(ResolutionType type, String memo) {
+        this.status = EscalationStatus.RESOLVED;
+        this.resolutionType = type;
+        this.resolutionMemo = memo;
+        this.resolvedAt = Instant.now();
     }
 }

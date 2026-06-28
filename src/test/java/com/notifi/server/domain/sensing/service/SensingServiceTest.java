@@ -4,9 +4,13 @@ import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.entity.Escalation;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
+import com.notifi.server.domain.sensing.dto.PoseClipIngestRequest;
+import com.notifi.server.domain.sensing.dto.PoseClipIngestResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestRequest;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestResponse;
 import com.notifi.server.domain.sensing.entity.*;
+import com.notifi.server.domain.sensing.exception.SensingErrorCode;
+import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -19,7 +23,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
+
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +42,7 @@ class SensingServiceTest {
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock EscalationRepository escalationRepository;
     @Mock CareTargetRepository careTargetRepository;
+    @Mock PoseClipRepository poseClipRepository;
 
     @InjectMocks SensingService sensingService;
 
@@ -155,6 +163,61 @@ class SensingServiceTest {
         then(escalationRepository).should(never()).save(any());
     }
 
+    // ── I5: ingestPoseClip ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ingestPoseClip: 신규 클립을 저장하고 pose_clip_id를 반환한다 — fps·frameCount·window 매핑 검증")
+    void ingestPoseClip_new_savesAndReturns() {
+        PoseClip clip = poseClip();
+        ReflectionTestUtils.setField(clip, "id", 10L);
+
+        given(sensingEventRepository.existsById(1L)).willReturn(true);
+        given(poseClipRepository.findBySensingEventId(1L)).willReturn(Optional.empty());
+        given(poseClipRepository.save(any())).willReturn(clip);
+
+        PoseClipIngestResponse res = sensingService.ingestPoseClip(1L, poseClipRequest());
+
+        assertThat(res.poseClipId()).isEqualTo(10L);
+        assertThat(res.sensingEventId()).isEqualTo(1L);
+
+        ArgumentCaptor<PoseClip> captor = ArgumentCaptor.forClass(PoseClip.class);
+        then(poseClipRepository).should().save(captor.capture());
+        PoseClip saved = captor.getValue();
+        assertThat(saved.getFps()).isEqualTo((short) 10);
+        assertThat(saved.getFrameCount()).isEqualTo(300);
+        assertThat(saved.getWindowStartAt()).isEqualTo(DETECTED_AT);
+        assertThat(saved.getWindowEndAt()).isEqualTo(DETECTED_AT.plusSeconds(30));
+    }
+
+    @Test
+    @DisplayName("ingestPoseClip: 동일 sensing_event_id 재요청 시 기존 id를 반환하고 저장하지 않는다")
+    void ingestPoseClip_duplicate_returnsExistingId() {
+        PoseClip existing = poseClip();
+        ReflectionTestUtils.setField(existing, "id", 10L);
+
+        given(sensingEventRepository.existsById(1L)).willReturn(true);
+        given(poseClipRepository.findBySensingEventId(1L)).willReturn(Optional.of(existing));
+
+        PoseClipIngestResponse res = sensingService.ingestPoseClip(1L, poseClipRequest());
+
+        assertThat(res.poseClipId()).isEqualTo(10L);
+        assertThat(res.sensingEventId()).isEqualTo(1L);
+        then(poseClipRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ingestPoseClip: 존재하지 않는 sensing_event_id → SENSING_EVENT_NOT_FOUND")
+    void ingestPoseClip_unknownEvent_throws() {
+        given(sensingEventRepository.existsById(99L)).willReturn(false);
+
+        assertThatThrownBy(() -> sensingService.ingestPoseClip(99L, poseClipRequest()))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
+
+        then(poseClipRepository).should(never()).save(any());
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private SensingEventIngestRequest dangerRequest() {
@@ -185,5 +248,19 @@ class SensingServiceTest {
 
     private RiskAssessment riskAssessment() {
         return RiskAssessment.of(1L, (short) 85, RiskLevel.DANGER, null, "v0.1", DETECTED_AT);
+    }
+
+    private PoseClip poseClip() {
+        return PoseClip.of(1L, "v0.1", "13-point", (short) 10, 300, 30000,
+                DETECTED_AT, DETECTED_AT.plusSeconds(30),
+                Map.of("frames", "data"), null);
+    }
+
+    private PoseClipIngestRequest poseClipRequest() {
+        return new PoseClipIngestRequest(
+                "v0.1", "13-point", 10, 300, 30000,
+                DETECTED_AT, DETECTED_AT.plusSeconds(30),
+                Map.of("frames", "data"), null
+        );
     }
 }

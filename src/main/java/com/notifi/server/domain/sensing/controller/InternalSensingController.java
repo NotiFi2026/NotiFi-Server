@@ -1,5 +1,7 @@
 package com.notifi.server.domain.sensing.controller;
 
+import com.notifi.server.domain.sensing.dto.PoseClipIngestRequest;
+import com.notifi.server.domain.sensing.dto.PoseClipIngestResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestRequest;
 import com.notifi.server.domain.sensing.dto.SensingEventIngestResponse;
 import com.notifi.server.domain.sensing.service.SensingService;
@@ -29,5 +31,18 @@ public class InternalSensingController {
             @Valid @RequestBody SensingEventIngestRequest request
     ) {
         return ApiResponse.success(sensingService.ingest(request));
+    }
+
+    @Operation(
+            summary = "[I5] 복원 스켈레톤 클립 적재",
+            description = "AI 서버(CSI-to-Pose 모델)가 이상 감지 구간의 스켈레톤 복원을 완료한 후 클립을 적재한다. sensing_event_id 기준 1:1 멱등 처리 — 동일 이벤트에 재요청 시 기존 클립 id를 반환하고 새 row를 생성하지 않는다. (권한: X-Internal-Key)"
+    )
+    @PostMapping("/{id}/pose-clip")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<PoseClipIngestResponse> ingestPoseClip(
+            @PathVariable Long id,
+            @Valid @RequestBody PoseClipIngestRequest request
+    ) {
+        return ApiResponse.success(sensingService.ingestPoseClip(id, request));
     }
 }
