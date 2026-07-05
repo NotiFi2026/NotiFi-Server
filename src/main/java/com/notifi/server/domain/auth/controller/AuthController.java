@@ -2,6 +2,7 @@ package com.notifi.server.domain.auth.controller;
 
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.service.AuthService;
+import com.notifi.server.domain.auth.service.CareRecipientAuthService;
 import com.notifi.server.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final CareRecipientAuthService careRecipientAuthService;
 
     @Operation(summary = "[A1] 보호자 회원가입",
                description = "이메일·비밀번호·이름·역할로 보호자 계정을 생성한다. (권한: 공개)")
@@ -27,6 +29,16 @@ public class AuthController {
     @SecurityRequirements   // 공개 엔드포인트 — Swagger 자물쇠 표시 제거
     public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
         return ApiResponse.success(authService.signup(request));
+    }
+
+    @Operation(summary = "[A5] 노인 연결코드 가입",
+               description = "주 보호자가 발급한 연결코드로 노인 본인 계정을 생성하고 노인(care_target)과 연결한다. 가입 즉시 토큰이 발급되며 코드는 일회성이다. (권한: 공개)")
+    @PostMapping("/recipient-signup")
+    @ResponseStatus(HttpStatus.CREATED)
+    @SecurityRequirements   // 공개 엔드포인트 — Swagger 자물쇠 표시 제거
+    public ApiResponse<RecipientSignupResponse> recipientSignup(
+            @Valid @RequestBody RecipientSignupRequest request) {
+        return ApiResponse.success(careRecipientAuthService.signup(request));
     }
 
     @Operation(summary = "[A2] 로그인",

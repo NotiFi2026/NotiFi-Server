@@ -16,7 +16,9 @@ public enum RelationshipErrorCode implements ErrorCode {
     RELATIONSHIP_NOT_FOUND(HttpStatus.NOT_FOUND,
             "RELATIONSHIP_NOT_FOUND", "존재하지 않는 보호자 관계입니다."),
     CANNOT_DELETE_PRIMARY(HttpStatus.CONFLICT,
-            "CANNOT_DELETE_PRIMARY", "주 보호자 연결은 해제할 수 없습니다.");
+            "CANNOT_DELETE_PRIMARY", "주 보호자 연결은 해제할 수 없습니다."),
+    INVALID_RECIPIENT_CODE(HttpStatus.NOT_FOUND,
+            "INVALID_RECIPIENT_CODE", "유효하지 않거나 만료된 연결 코드입니다.");
 
     private final HttpStatus status;
     private final String code;
