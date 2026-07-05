@@ -1,8 +1,7 @@
 package com.notifi.server.domain.escalation.service;
 
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest;
@@ -44,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,8 +54,7 @@ class EscalationServiceTest {
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock SensingEventRepository sensingEventRepository;
     @Mock NotificationService notificationService;
-    @Mock CareRelationshipRepository careRelationshipRepository;
-    @Mock CareTargetRepository careTargetRepository;
+    @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks EscalationService escalationService;
 
@@ -180,7 +179,6 @@ class EscalationServiceTest {
         ReflectionTestUtils.setField(escalation, "id", 20L);
 
         Page<Escalation> page = new PageImpl<>(List.of(escalation));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(true);
         given(escalationRepository.findByCareTargetId(eq(CARE_TARGET_ID), any(Pageable.class))).willReturn(page);
 
         PageResponse<EscalationSummaryResponse> result =
@@ -194,8 +192,8 @@ class EscalationServiceTest {
     @Test
     @DisplayName("listEscalations: 관계 없음(노인 존재) → ACCESS_DENIED")
     void listEscalations_noRelationship_accessDenied() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(false);
-        given(careTargetRepository.existsById(CARE_TARGET_ID)).willReturn(true);
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.listEscalations(USER_ID, CARE_TARGET_ID, PageRequest.of(0, 20)))
                 .isInstanceOf(BusinessException.class)
@@ -206,8 +204,8 @@ class EscalationServiceTest {
     @Test
     @DisplayName("listEscalations: 관계 없음(노인 미존재) → CARE_TARGET_NOT_FOUND")
     void listEscalations_careTargetNotFound() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(false);
-        given(careTargetRepository.existsById(CARE_TARGET_ID)).willReturn(false);
+        willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.listEscalations(USER_ID, CARE_TARGET_ID, PageRequest.of(0, 20)))
                 .isInstanceOf(BusinessException.class)
@@ -232,7 +230,6 @@ class EscalationServiceTest {
         given(escalationRepository.findById(30L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(true);
         given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(30L))
                 .willReturn(List.of(s1, s2));
 
@@ -263,8 +260,8 @@ class EscalationServiceTest {
         given(escalationRepository.findById(31L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(false);
-        given(careTargetRepository.existsById(CARE_TARGET_ID)).willReturn(true);
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.getDetail(USER_ID, 31L))
                 .isInstanceOf(BusinessException.class)
@@ -284,7 +281,6 @@ class EscalationServiceTest {
         given(escalationRepository.findById(40L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(true);
         given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(40L)).willReturn(List.of());
 
         EscalationDetailResponse res = escalationService.resolve(USER_ID, 40L,
@@ -306,7 +302,6 @@ class EscalationServiceTest {
         given(escalationRepository.findById(41L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(true);
 
         assertThatThrownBy(() -> escalationService.resolve(USER_ID, 41L,
                 new EscalationResolveRequest(ResolutionType.GUARDIAN_HANDLED, null)))
@@ -323,7 +318,6 @@ class EscalationServiceTest {
         given(escalationRepository.findById(42L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(USER_ID, CARE_TARGET_ID)).willReturn(true);
 
         assertThatThrownBy(() -> escalationService.resolve(USER_ID, 42L,
                 new EscalationResolveRequest(ResolutionType.SELF_RESOLVED, null)))

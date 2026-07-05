@@ -8,7 +8,6 @@ import com.notifi.server.domain.caretarget.dto.CareTargetUpdateRequest;
 import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.entity.RelationshipType;
-import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
@@ -35,6 +34,7 @@ public class CareTargetService {
     private final CareRelationshipRepository careRelationshipRepository;
     private final UserRepository userRepository;
     private final DeviceRepository deviceRepository;
+    private final CareTargetAccessValidator accessValidator;
 
     @Transactional
     public CareTargetCreateResponse register(Long userId, CareTargetCreateRequest request) {
@@ -76,13 +76,13 @@ public class CareTargetService {
 
     @Transactional(readOnly = true)
     public CareTargetDetailResponse getDetail(Long userId, Long careTargetId) {
-        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        CareRelationship cr = accessValidator.getRelationshipOrThrow(userId, careTargetId);
         return CareTargetDetailResponse.from(cr);
     }
 
     @Transactional
     public CareTargetDetailResponse update(Long userId, Long careTargetId, CareTargetUpdateRequest request) {
-        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        CareRelationship cr = accessValidator.getRelationshipOrThrow(userId, careTargetId);
         cr.getCareTarget().update(
                 request.name(),
                 request.birthDate(),
@@ -95,28 +95,10 @@ public class CareTargetService {
 
     @Transactional
     public void delete(Long userId, Long careTargetId) {
-        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
+        CareRelationship cr = accessValidator.getRelationshipOrThrow(userId, careTargetId);
         if (!cr.isPrimary()) {
             throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
         }
         cr.getCareTarget().softDelete();
-    }
-
-    // ── private ──────────────────────────────────────────────────────────────
-
-    /**
-     * 관계 기반 접근권한 가드.
-     * 관계 없음 + 노인 존재 → 403 ACCESS_DENIED
-     * 관계 없음 + 노인 없음(또는 soft-deleted) → 404 CARE_TARGET_NOT_FOUND
-     */
-    private CareRelationship getRelationshipOrThrow(Long userId, Long careTargetId) {
-        return careRelationshipRepository
-                .findByUserIdAndCareTargetId(userId, careTargetId)
-                .orElseThrow(() -> {
-                    if (careTargetRepository.existsById(careTargetId)) {
-                        throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
-                    }
-                    throw new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
-                });
     }
 }

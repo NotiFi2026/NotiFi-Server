@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,6 +44,7 @@ class RelationshipServiceTest {
     @Mock CareTargetRepository careTargetRepository;
     @Mock UserRepository userRepository;
     @Mock InviteCodeStore inviteCodeStore;
+    @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks RelationshipService relationshipService;
 
@@ -57,9 +59,6 @@ class RelationshipServiceTest {
     @Test
     @DisplayName("issueInviteCode: 주 보호자가 코드 발급하면 code + invite_url 반환")
     void issueInviteCode_success() {
-        CareTarget ct = careTarget(45L);
-        CareRelationship primary = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(primary));
         given(inviteCodeStore.issue(any())).willReturn("AB3CD7EF");
         given(inviteCodeStore.nextExpiresAt()).willReturn(Instant.now().plusSeconds(86400));
 
@@ -74,9 +73,8 @@ class RelationshipServiceTest {
     @Test
     @DisplayName("issueInviteCode: 주 보호자 아닌 경우 → 403 ACCESS_DENIED")
     void issueInviteCode_nonPrimary_accessDenied() {
-        CareTarget ct = careTarget(45L);
-        CareRelationship nonPrimary = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 2);
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(2L, 45L)).willReturn(Optional.of(nonPrimary));
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requirePrimary(2L, 45L);
 
         assertThatThrownBy(() -> relationshipService.issueInviteCode(2L, 45L,
                 new InviteCodeCreateRequest(RelationshipType.FAMILY, null)))
@@ -223,7 +221,7 @@ class RelationshipServiceTest {
         User u1 = user(1L, "김보호");
         User u2 = user(2L, "이보호");
 
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(cr1));
+        given(accessValidator.getRelationshipOrThrow(1L, 45L)).willReturn(cr1);
         given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(cr1, cr2));
         given(userRepository.findAllById(any())).willReturn(List.of(u1, u2));
 
@@ -237,8 +235,8 @@ class RelationshipServiceTest {
     @Test
     @DisplayName("getGuardians: 관계 없고 노인 존재 → 403 ACCESS_DENIED")
     void getGuardians_noRelationship_accessDenied() {
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.empty());
-        given(careTargetRepository.existsById(45L)).willReturn(true);
+        given(accessValidator.getRelationshipOrThrow(1L, 45L))
+                .willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED));
 
         assertThatThrownBy(() -> relationshipService.getGuardians(1L, 45L))
                 .isInstanceOf(BusinessException.class)
@@ -254,10 +252,8 @@ class RelationshipServiceTest {
         CareTarget ct = careTarget(45L);
         CareRelationship target = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 1);
         ReflectionTestUtils.setField(target, "id", 7L);
-        CareRelationship callerCr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
 
         given(careRelationshipRepository.findById(7L)).willReturn(Optional.of(target));
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(callerCr));
 
         RelationshipResponse resp = relationshipService.updateRelationship(1L, 7L,
                 new RelationshipUpdateRequest(null, (short) 3));
@@ -284,10 +280,10 @@ class RelationshipServiceTest {
         CareTarget ct = careTarget(45L);
         CareRelationship target = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 1);
         ReflectionTestUtils.setField(target, "id", 7L);
-        CareRelationship callerCr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, false, (short) 2);
 
         given(careRelationshipRepository.findById(7L)).willReturn(Optional.of(target));
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(callerCr));
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requirePrimary(1L, 45L);
 
         assertThatThrownBy(() -> relationshipService.updateRelationship(1L, 7L,
                 new RelationshipUpdateRequest(null, (short) 3)))
@@ -304,10 +300,8 @@ class RelationshipServiceTest {
         CareTarget ct = careTarget(45L);
         CareRelationship target = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 2);
         ReflectionTestUtils.setField(target, "id", 7L);
-        CareRelationship callerCr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
 
         given(careRelationshipRepository.findById(7L)).willReturn(Optional.of(target));
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(callerCr));
 
         relationshipService.deleteRelationship(1L, 7L);
 
@@ -320,10 +314,8 @@ class RelationshipServiceTest {
         CareTarget ct = careTarget(45L);
         CareRelationship target = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
         ReflectionTestUtils.setField(target, "id", 1L);
-        CareRelationship callerCr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
 
         given(careRelationshipRepository.findById(1L)).willReturn(Optional.of(target));
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(callerCr));
 
         assertThatThrownBy(() -> relationshipService.deleteRelationship(1L, 1L))
                 .isInstanceOf(BusinessException.class)
@@ -348,10 +340,10 @@ class RelationshipServiceTest {
         CareTarget ct = careTarget(45L);
         CareRelationship target = CareRelationship.of(2L, ct, RelationshipType.FAMILY, false, (short) 2);
         ReflectionTestUtils.setField(target, "id", 7L);
-        CareRelationship callerCr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, false, (short) 2);
 
         given(careRelationshipRepository.findById(7L)).willReturn(Optional.of(target));
-        given(careRelationshipRepository.findByUserIdAndCareTargetId(1L, 45L)).willReturn(Optional.of(callerCr));
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requirePrimary(1L, 45L);
 
         assertThatThrownBy(() -> relationshipService.deleteRelationship(1L, 7L))
                 .isInstanceOf(BusinessException.class)

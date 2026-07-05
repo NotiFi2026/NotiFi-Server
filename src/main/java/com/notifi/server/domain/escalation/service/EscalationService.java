@@ -1,8 +1,6 @@
 package com.notifi.server.domain.escalation.service;
 
-import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest;
@@ -22,7 +20,6 @@ import com.notifi.server.domain.sensing.entity.SensingEvent;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
-import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -42,8 +39,7 @@ public class EscalationService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final SensingEventRepository sensingEventRepository;
     private final NotificationService notificationService;
-    private final CareRelationshipRepository careRelationshipRepository;
-    private final CareTargetRepository careTargetRepository;
+    private final CareTargetAccessValidator accessValidator;
 
     @Transactional
     public EscalationStepResponse recordStep(Long escalationId, EscalationStepRequest req) {
@@ -81,7 +77,7 @@ public class EscalationService {
     @Transactional(readOnly = true)
     public PageResponse<EscalationSummaryResponse> listEscalations(
             Long userId, Long careTargetId, Pageable pageable) {
-        verifyRelationship(userId, careTargetId);
+        accessValidator.requireRelationship(userId, careTargetId);
         Page<EscalationSummaryResponse> page =
                 escalationRepository.findByCareTargetId(careTargetId, pageable)
                         .map(EscalationSummaryResponse::from);
@@ -94,7 +90,7 @@ public class EscalationService {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         Long careTargetId = resolveCareTargetId(escalation);
-        verifyRelationship(userId, careTargetId);
+        accessValidator.requireRelationship(userId, careTargetId);
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return EscalationDetailResponse.of(escalation, steps);
@@ -106,7 +102,7 @@ public class EscalationService {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         Long careTargetId = resolveCareTargetId(escalation);
-        verifyRelationship(userId, careTargetId);
+        accessValidator.requireRelationship(userId, careTargetId);
 
         if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
             throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
@@ -124,15 +120,6 @@ public class EscalationService {
     }
 
     // ── private ───────────────────────────────────────────────────────────────
-    private void verifyRelationship(Long userId, Long careTargetId) {
-        if (!careRelationshipRepository.existsByUserIdAndCareTargetId(userId, careTargetId)) {
-            if (careTargetRepository.existsById(careTargetId)) {
-                throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
-            }
-            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
-        }
-    }
-
     private Long resolveCareTargetId(Escalation escalation) {
         RiskAssessment ra = riskAssessmentRepository.findById(escalation.getRiskAssessmentId())
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
