@@ -44,7 +44,8 @@ public class SensingQueryService {
     // ── S1: 실시간 상태 대시보드 ───────────────────────────────────────────────
     @Transactional(readOnly = true)
     public CareTargetStatusResponse getStatus(Long userId, Long careTargetId) {
-        accessValidator.requireRelationship(userId, careTargetId);
+        // 보호자뿐 아니라 노인 본인 앱에서도 자기 상태를 볼 수 있다
+        accessValidator.requireRelationshipOrSelf(userId, careTargetId);
 
         SensingEvent latest = sensingEventRepository
                 .findFirstByCareTargetIdOrderByDetectedAtDesc(careTargetId)

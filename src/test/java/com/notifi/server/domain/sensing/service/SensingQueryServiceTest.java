@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
@@ -97,10 +98,22 @@ class SensingQueryServiceTest {
     }
 
     @Test
-    @DisplayName("getStatus: 관계 없고 노인 존재 → ACCESS_DENIED")
+    @DisplayName("getStatus: 본인·관계 검증 통과(노인 본인 포함) → requireRelationshipOrSelf 위임")
+    void getStatus_selfAccess_delegatesToOrSelfGuard() {
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+                .willReturn(Optional.empty());
+        given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
+
+        sensingQueryService.getStatus(9L, 45L);
+
+        then(accessValidator).should().requireRelationshipOrSelf(9L, 45L);
+    }
+
+    @Test
+    @DisplayName("getStatus: 관계도 본인도 아님(노인 존재) → ACCESS_DENIED")
     void getStatus_noRelationship_targetExists_accessDenied() {
         willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
-                .given(accessValidator).requireRelationship(1L, 45L);
+                .given(accessValidator).requireRelationshipOrSelf(1L, 45L);
 
         assertThatThrownBy(() -> sensingQueryService.getStatus(1L, 45L))
                 .isInstanceOf(BusinessException.class)
@@ -112,7 +125,7 @@ class SensingQueryServiceTest {
     @DisplayName("getStatus: 노인 없음 → CARE_TARGET_NOT_FOUND")
     void getStatus_targetNotFound() {
         willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
-                .given(accessValidator).requireRelationship(1L, 99L);
+                .given(accessValidator).requireRelationshipOrSelf(1L, 99L);
 
         assertThatThrownBy(() -> sensingQueryService.getStatus(1L, 99L))
                 .isInstanceOf(BusinessException.class)

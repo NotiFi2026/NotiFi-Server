@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 @ExtendWith(MockitoExtension.class)
 class CareTargetAccessValidatorTest {
@@ -124,11 +125,62 @@ class CareTargetAccessValidatorTest {
                 .isEqualTo(CommonErrorCode.ACCESS_DENIED);
     }
 
+    // ── requireRelationshipOrSelf ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("requireRelationshipOrSelf: 보호자 관계 있으면 통과 (노인 조회 없음)")
+    void requireRelationshipOrSelf_related_passes() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
+
+        assertThatCode(() -> validator.requireRelationshipOrSelf(1L, 45L)).doesNotThrowAnyException();
+        then(careTargetRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("requireRelationshipOrSelf: 노인 본인 계정이면 통과")
+    void requireRelationshipOrSelf_self_passes() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(9L, 45L)).willReturn(false);
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(linkedCareTarget(45L, 9L)));
+
+        assertThatCode(() -> validator.requireRelationshipOrSelf(9L, 45L)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("requireRelationshipOrSelf: 관계도 본인도 아님 → 403 ACCESS_DENIED")
+    void requireRelationshipOrSelf_thirdParty_accessDenied() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(3L, 45L)).willReturn(false);
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(linkedCareTarget(45L, 9L)));
+
+        assertThatThrownBy(() -> validator.requireRelationshipOrSelf(3L, 45L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+    }
+
+    @Test
+    @DisplayName("requireRelationshipOrSelf: 노인 없음 → 404 CARE_TARGET_NOT_FOUND")
+    void requireRelationshipOrSelf_targetNotFound() {
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(9L, 99L)).willReturn(false);
+        given(careTargetRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> validator.requireRelationshipOrSelf(9L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────
 
     private CareRelationship relationship(Long userId, Long careTargetId, boolean isPrimary) {
         CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
         ReflectionTestUtils.setField(ct, "id", careTargetId);
         return CareRelationship.of(userId, ct, RelationshipType.FAMILY, isPrimary, (short) 1);
+    }
+
+    private CareTarget linkedCareTarget(Long careTargetId, Long linkedUserId) {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", careTargetId);
+        ct.linkUser(linkedUserId);
+        return ct;
     }
 }

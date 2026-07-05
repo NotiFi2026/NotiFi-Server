@@ -44,6 +44,19 @@ public class CareTargetAccessValidator {
         }
     }
 
+    /** 보호자 관계 또는 노인 본인(care_target.user_id == userId) 허용. */
+    public void requireRelationshipOrSelf(Long userId, Long careTargetId) {
+        if (careRelationshipRepository.existsByUserIdAndCareTargetId(userId, careTargetId)) {
+            return;
+        }
+        Long linkedUserId = careTargetRepository.findById(careTargetId)
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .getUserId();
+        if (!userId.equals(linkedUserId)) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+    }
+
     private BusinessException notRelatedException(Long careTargetId) {
         if (careTargetRepository.existsById(careTargetId)) {
             return new BusinessException(CommonErrorCode.ACCESS_DENIED);
