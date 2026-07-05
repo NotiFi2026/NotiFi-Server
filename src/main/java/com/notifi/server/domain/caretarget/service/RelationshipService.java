@@ -3,11 +3,13 @@ package com.notifi.server.domain.caretarget.service;
 import com.notifi.server.domain.caretarget.dto.*;
 import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.exception.RelationshipErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -49,6 +51,22 @@ public class RelationshipService {
         String code = inviteCodeStore.issue(payload);
         String inviteUrl = inviteLinkBaseUrl + "/" + code;
         return new InviteCodeCreateResponse(code, inviteUrl, inviteCodeStore.nextExpiresAt());
+    }
+
+    // ── R5: 노인 계정 연결코드 발급 ─────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public RecipientCodeCreateResponse issueRecipientCode(Long userId, Long careTargetId) {
+        accessValidator.requirePrimary(userId, careTargetId);
+
+        CareTarget careTarget = careTargetRepository.findById(careTargetId)
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND));
+        if (careTarget.getUserId() != null) {
+            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
+        }
+
+        String code = inviteCodeStore.issueRecipientCode(new RecipientCodePayload(careTargetId, userId));
+        return new RecipientCodeCreateResponse(code, inviteCodeStore.nextExpiresAt());
     }
 
     // ── R1-c: 초대코드 미리보기 (코드 유지) ────────────────────────────────────

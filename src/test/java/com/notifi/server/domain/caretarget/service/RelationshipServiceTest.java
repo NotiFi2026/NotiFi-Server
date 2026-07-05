@@ -5,6 +5,7 @@ import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.entity.Gender;
 import com.notifi.server.domain.caretarget.entity.RelationshipType;
+import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.exception.RelationshipErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
@@ -81,6 +82,51 @@ class RelationshipServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+    }
+
+    // ── issueRecipientCode (R5) ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("issueRecipientCode: 주 보호자가 미연결 노인 코드 발급 → code + expires_at 반환")
+    void issueRecipientCode_success() {
+        CareTarget ct = careTarget(45L);
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
+        given(inviteCodeStore.issueRecipientCode(any())).willReturn("RC3DE7FG");
+        given(inviteCodeStore.nextExpiresAt()).willReturn(Instant.now().plusSeconds(86400));
+
+        RecipientCodeCreateResponse resp = relationshipService.issueRecipientCode(1L, 45L);
+
+        assertThat(resp.code()).isEqualTo("RC3DE7FG");
+        assertThat(resp.expiresAt()).isAfter(Instant.now());
+        then(inviteCodeStore).should().issueRecipientCode(argThat(p ->
+                p.careTargetId() == 45L && p.issuedBy() == 1L));
+    }
+
+    @Test
+    @DisplayName("issueRecipientCode: 주 보호자 아님 → 403 ACCESS_DENIED")
+    void issueRecipientCode_nonPrimary_accessDenied() {
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requirePrimary(2L, 45L);
+
+        assertThatThrownBy(() -> relationshipService.issueRecipientCode(2L, 45L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+        then(inviteCodeStore).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("issueRecipientCode: 이미 계정 연결된 노인 → 409 CARE_TARGET_ALREADY_LINKED")
+    void issueRecipientCode_alreadyLinked() {
+        CareTarget ct = careTarget(45L);
+        ct.linkUser(9L);
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
+
+        assertThatThrownBy(() -> relationshipService.issueRecipientCode(1L, 45L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
+        then(inviteCodeStore).shouldHaveNoInteractions();
     }
 
     // ── previewInviteCode (R1-c) ───────────────────────────────────────────
