@@ -6,6 +6,7 @@ import com.notifi.server.domain.auth.exception.AuthErrorCode;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
+import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,10 @@ public class AuthService {
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
+        // 노인 계정은 연결코드 가입(A5) 전용 — 일반 회원가입으로 생성 불가
+        if (request.role() == Role.CARE_RECIPIENT) {
+            throw new BusinessException(AuthErrorCode.SIGNUP_ROLE_NOT_ALLOWED);
+        }
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);

@@ -65,6 +65,17 @@ class AuthServiceTest {
                 .isEqualTo(AuthErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
+    @Test
+    @DisplayName("signup: CARE_RECIPIENT 자가가입 → SIGNUP_ROLE_NOT_ALLOWED")
+    void signup_careRecipientBlocked() {
+        assertThatThrownBy(() -> authService.signup(new SignupRequest("old@b.com", "pw123456", "김노인", Role.CARE_RECIPIENT)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(AuthErrorCode.SIGNUP_ROLE_NOT_ALLOWED);
+        // role 검사가 최우선 — 이메일 조회조차 없어야 함
+        then(userRepository).shouldHaveNoInteractions();
+    }
+
     // ── login ─────────────────────────────────────────────────────────────
 
     @Test

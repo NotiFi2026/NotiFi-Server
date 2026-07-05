@@ -15,7 +15,9 @@ public enum AuthErrorCode implements ErrorCode {
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT,
             "EMAIL_ALREADY_EXISTS", "이미 사용 중인 이메일입니다."),
     INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED,
-            "INVALID_REFRESH_TOKEN", "리프레시 토큰이 유효하지 않습니다.");
+            "INVALID_REFRESH_TOKEN", "리프레시 토큰이 유효하지 않습니다."),
+    SIGNUP_ROLE_NOT_ALLOWED(HttpStatus.BAD_REQUEST,
+            "SIGNUP_ROLE_NOT_ALLOWED", "해당 역할로는 직접 가입할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
