@@ -79,4 +79,9 @@ public class Notification {
     public void markFailed() {
         this.status = NotificationStatus.FAILED;
     }
+
+    public void markRead() {
+        this.status = NotificationStatus.READ;
+        this.readAt = Instant.now();
+    }
 }

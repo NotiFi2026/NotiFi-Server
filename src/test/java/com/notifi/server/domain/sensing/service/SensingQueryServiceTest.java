@@ -7,8 +7,10 @@ import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.entity.NodeRole;
 import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
+import com.notifi.server.domain.sensing.dto.PoseClipResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
 import com.notifi.server.domain.sensing.entity.*;
+import com.notifi.server.domain.sensing.exception.SensingErrorCode;
 import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
@@ -27,6 +29,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -189,5 +192,82 @@ class SensingQueryServiceTest {
         assertThat(summary.riskScore()).isNull();
         assertThat(summary.riskLevel()).isNull();
         assertThat(summary.hasReplay()).isFalse();
+    }
+
+    // ── S3: getPoseClip ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getPoseClip: 정상 → PoseClipResponse 반환·필드 매핑 일치")
+    void getPoseClip_success_returnsResponse() {
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+                null, null, null, null, "v0.1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 10L);
+        given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
+
+        Instant start = Instant.parse("2026-06-27T03:22:00Z");
+        Instant end   = Instant.parse("2026-06-27T03:22:05Z");
+        Map<String, Object> frames = Map.of("joints", List.of("head"));
+        PoseClip clip = PoseClip.of(10L, "csi-pose-v0.1", "13-point",
+                (short) 30, 150, 5000, start, end, frames, null);
+        ReflectionTestUtils.setField(clip, "id", 7L);
+        given(poseClipRepository.findBySensingEventId(10L)).willReturn(Optional.of(clip));
+
+        PoseClipResponse result = sensingQueryService.getPoseClip(1L, 10L);
+
+        assertThat(result.poseClipId()).isEqualTo(7L);
+        assertThat(result.sensingEventId()).isEqualTo(10L);
+        assertThat(result.modelVersion()).isEqualTo("csi-pose-v0.1");
+        assertThat(result.jointSchema()).isEqualTo("13-point");
+        assertThat(result.fps()).isEqualTo(30);
+        assertThat(result.frameCount()).isEqualTo(150);
+        assertThat(result.durationMs()).isEqualTo(5000);
+        assertThat(result.windowStartAt()).isEqualTo(start);
+        assertThat(result.windowEndAt()).isEqualTo(end);
+        assertThat(result.frames()).isEqualTo(frames);
+        assertThat(result.eventTimeline()).isNull();
+    }
+
+    @Test
+    @DisplayName("getPoseClip: 이벤트 없음 → SENSING_EVENT_NOT_FOUND")
+    void getPoseClip_eventNotFound() {
+        given(sensingEventRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("getPoseClip: 관계 없고 노인 존재 → ACCESS_DENIED")
+    void getPoseClip_noRelationship_accessDenied() {
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+                null, null, null, null, "v0.1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 10L);
+        given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(false);
+        given(careTargetRepository.existsById(45L)).willReturn(true);
+
+        assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(CommonErrorCode.ACCESS_DENIED));
+    }
+
+    @Test
+    @DisplayName("getPoseClip: 클립 없음(NORMAL 이벤트 등) → POSE_CLIP_NOT_FOUND")
+    void getPoseClip_clipNotFound() {
+        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL,
+                null, null, null, null, "v0.1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 10L);
+        given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
+        given(poseClipRepository.findBySensingEventId(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(SensingErrorCode.POSE_CLIP_NOT_FOUND));
     }
 }
