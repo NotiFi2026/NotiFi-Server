@@ -205,6 +205,7 @@ class RelationshipServiceTest {
         InviteCodePayload payload = new InviteCodePayload(45L, RelationshipType.FAMILY, (short) 2, 1L);
         CareTarget ct = careTarget(45L);
 
+        given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
         given(inviteCodeStore.findAndDelete("AB3CD7EF")).willReturn(Optional.of(payload));
         given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
         given(careRelationshipRepository.existsByUserIdAndCareTargetId(2L, 45L)).willReturn(false);
@@ -229,6 +230,7 @@ class RelationshipServiceTest {
     @Test
     @DisplayName("acceptInviteCode: 만료·사용된 코드 → 404 INVALID_INVITE_CODE")
     void acceptInviteCode_invalidCode() {
+        given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
         given(inviteCodeStore.findAndDelete("BADCODE0")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> relationshipService.acceptInviteCode(2L, "BADCODE0"))
@@ -243,6 +245,7 @@ class RelationshipServiceTest {
         InviteCodePayload payload = new InviteCodePayload(45L, RelationshipType.FAMILY, (short) 2, 1L);
         CareTarget ct = careTarget(45L);
 
+        given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
         given(inviteCodeStore.findAndDelete("AB3CD7EF")).willReturn(Optional.of(payload));
         given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
         given(careRelationshipRepository.existsByUserIdAndCareTargetId(2L, 45L)).willReturn(true);
@@ -251,6 +254,20 @@ class RelationshipServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.RELATIONSHIP_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("acceptInviteCode: 노인 계정(CARE_RECIPIENT) → 403 ACCESS_DENIED, 코드 미소모")
+    void acceptInviteCode_careRecipient_blocked_codeNotConsumed() {
+        User recipient = User.create("old@b.com", "hashed", "박순자", Role.CARE_RECIPIENT);
+        ReflectionTestUtils.setField(recipient, "id", 9L);
+        given(userRepository.findById(9L)).willReturn(Optional.of(recipient));
+
+        assertThatThrownBy(() -> relationshipService.acceptInviteCode(9L, "AB3CD7EF"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+        then(inviteCodeStore).should(never()).findAndDelete(any());
     }
 
     // ── getGuardians (R2) ─────────────────────────────────────────────────

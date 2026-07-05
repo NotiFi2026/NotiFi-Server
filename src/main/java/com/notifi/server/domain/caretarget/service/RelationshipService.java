@@ -10,9 +10,11 @@ import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
+import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
 import com.notifi.server.global.exception.BusinessException;
+import com.notifi.server.global.exception.CommonErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -93,6 +95,13 @@ public class RelationshipService {
 
     @Transactional
     public InviteCodeAcceptResponse acceptInviteCode(Long userId, String code) {
+        // 노인 계정은 보호자가 될 수 없다 — 코드 소모(findAndDelete) 전에 차단
+        User caller = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND));
+        if (caller.getRole() == Role.CARE_RECIPIENT) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+
         InviteCodePayload payload = inviteCodeStore.findAndDelete(code)
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
 

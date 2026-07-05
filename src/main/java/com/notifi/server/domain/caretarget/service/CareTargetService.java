@@ -41,6 +41,11 @@ public class CareTargetService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND));
 
+        // 노인 계정은 보호 대상이지 보호자가 아니다 — 노인 등록(주 보호자 자동 연결) 차단
+        if (user.getRole() == Role.CARE_RECIPIENT) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+
         CareTarget careTarget = careTargetRepository.save(CareTarget.create(
                 request.name(),
                 request.birthDate(),

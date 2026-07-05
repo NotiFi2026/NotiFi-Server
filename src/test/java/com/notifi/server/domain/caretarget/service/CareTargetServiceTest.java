@@ -94,6 +94,21 @@ class CareTargetServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("register: 노인 계정(CARE_RECIPIENT) → 403 ACCESS_DENIED")
+    void register_careRecipient_blocked() {
+        User recipient = User.create("old@b.com", "hashed", "박순자", Role.CARE_RECIPIENT);
+        ReflectionTestUtils.setField(recipient, "id", 9L);
+        given(userRepository.findById(9L)).willReturn(Optional.of(recipient));
+
+        CareTargetCreateRequest req = new CareTargetCreateRequest("박순자", null, null, null, null);
+        assertThatThrownBy(() -> careTargetService.register(9L, req))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CommonErrorCode.ACCESS_DENIED);
+        then(careTargetRepository).shouldHaveNoInteractions();
+    }
+
     // ── getMyCareTargets (C2) ─────────────────────────────────────────────
 
     @Test
