@@ -1,6 +1,8 @@
 package com.notifi.server.domain.notification.service;
 
+import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest.GuardianMessage;
 import com.notifi.server.domain.notification.entity.Notification;
 import com.notifi.server.domain.notification.entity.NotificationCategory;
@@ -22,7 +24,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class NotificationService {
 
+    private static final String VOICE_CHECK_TITLE = "안부 확인";
+    private static final String VOICE_CHECK_BODY = "괜찮으신지 확인이 필요해요. 화면을 눌러 응답해 주세요.";
+
     private final CareRelationshipRepository careRelationshipRepository;
+    private final CareTargetRepository careTargetRepository;
     private final FcmTokenRepository fcmTokenRepository;
     private final NotificationRepository notificationRepository;
     private final FcmSender fcmSender;
@@ -78,6 +84,52 @@ public class NotificationService {
 
             notificationRepository.save(notification);
         }
+    }
+
+    /**
+     * VOICE_CHECK 단계 수신 시 호출.
+     * 노인 본인 앱으로 FCM 푸시를 보내 음성확인 UI를 깨운다. 계정 미연결 노인은 건너뜀.
+     * 음성 대화 자체는 노인 앱 ↔ AI 서버 직통이며, 여기서는 화면을 깨우는 신호만 보낸다.
+     */
+    @Transactional
+    public void dispatchVoiceCheck(Long escalationStepId, Long escalationId, Long careTargetId) {
+        Long recipientUserId = careTargetRepository.findById(careTargetId)
+                .map(CareTarget::getUserId)
+                .orElse(null);
+        if (recipientUserId == null) {
+            log.info("[FCM] careTargetId={} 노인 계정 미연결 — VOICE_CHECK 푸시 건너뜀", careTargetId);
+            return;
+        }
+
+        List<FcmToken> tokens = fcmTokenRepository.findByUserIdIn(List.of(recipientUserId));
+        Map<String, String> data = Map.of(
+                "type", "VOICE_CHECK",
+                "escalation_id", String.valueOf(escalationId),
+                "escalation_step_id", String.valueOf(escalationStepId)
+        );
+
+        Notification notification = Notification.create(
+                escalationStepId, recipientUserId, careTargetId,
+                NotificationChannel.FCM_PUSH, NotificationCategory.EMERGENCY,
+                VOICE_CHECK_TITLE, VOICE_CHECK_BODY
+        );
+
+        boolean anySent = false;
+        for (FcmToken token : tokens) {
+            if (fcmSender.send(token.getToken(), VOICE_CHECK_TITLE, VOICE_CHECK_BODY, data)) {
+                anySent = true;
+            }
+        }
+
+        if (anySent) {
+            notification.markSent();
+        } else {
+            notification.markFailed();
+            log.warn("[FCM] userId={} VOICE_CHECK 발송 실패 (토큰 {}개 중 전부 실패 또는 미등록)",
+                    recipientUserId, tokens.size());
+        }
+
+        notificationRepository.save(notification);
     }
 
     private String buildBody(GuardianMessage msg) {

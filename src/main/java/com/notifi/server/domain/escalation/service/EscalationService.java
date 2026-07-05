@@ -10,6 +10,7 @@ import com.notifi.server.domain.escalation.entity.Escalation;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.entity.ResolutionType;
+import com.notifi.server.domain.escalation.entity.StepStatus;
 import com.notifi.server.domain.escalation.entity.StepType;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
@@ -68,6 +69,13 @@ public class EscalationService {
         if (isNew && req.stepType() == StepType.GUARDIAN_NOTIFY && req.guardianMessage() != null) {
             Long careTargetId = resolveCareTargetId(escalation);
             notificationService.dispatchGuardianNotify(step.getId(), careTargetId, req.guardianMessage());
+        }
+
+        // 신규 VOICE_CHECK 진행 단계면 노인 앱으로 음성확인 푸시 (사후 기록 SKIPPED 등은 제외)
+        if (isNew && req.stepType() == StepType.VOICE_CHECK
+                && (req.status() == StepStatus.PENDING || req.status() == StepStatus.EXECUTED)) {
+            Long careTargetId = resolveCareTargetId(escalation);
+            notificationService.dispatchVoiceCheck(step.getId(), escalationId, careTargetId);
         }
 
         return EscalationStepResponse.from(step);

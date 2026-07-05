@@ -67,8 +67,32 @@ class EscalationServiceTest {
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("recordStep: VOICE_CHECK 신규 → step 저장, 알림 미발송")
-    void recordStep_voiceCheck_new_noNotification() {
+    @DisplayName("recordStep: VOICE_CHECK 신규(EXECUTED) → step 저장 + 노인 앱 음성확인 푸시")
+    void recordStep_voiceCheck_new_dispatchesVoiceCheck() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep step = voiceCheckStep();
+        ReflectionTestUtils.setField(step, "id", 100L);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willReturn(step);
+        given(riskAssessmentRepository.findById(1L)).willReturn(Optional.of(makeRiskAssessment()));
+        given(sensingEventRepository.findById(5L)).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
+
+        EscalationStepResponse res = escalationService.recordStep(10L, voiceCheckRequest());
+
+        assertThat(res.stepId()).isEqualTo(100L);
+        assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
+        then(notificationService).should().dispatchVoiceCheck(100L, 10L, CARE_TARGET_ID);
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK 첫 기록이 SKIPPED(사후 기록) → 푸시 미발송")
+    void recordStep_voiceCheck_skipped_noDispatch() {
         Escalation escalation = Escalation.start(1L);
         ReflectionTestUtils.setField(escalation, "id", 10L);
 
@@ -80,11 +104,9 @@ class EscalationServiceTest {
                 .willReturn(Optional.empty());
         given(escalationStepRepository.save(any())).willReturn(step);
 
-        EscalationStepResponse res = escalationService.recordStep(10L, voiceCheckRequest());
+        escalationService.recordStep(10L, voiceCheckRequest(StepStatus.SKIPPED));
 
-        assertThat(res.stepId()).isEqualTo(100L);
-        assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchVoiceCheck(any(), any(), any());
     }
 
     @Test
@@ -134,6 +156,7 @@ class EscalationServiceTest {
 
         then(escalationStepRepository).should(never()).save(any());
         then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchVoiceCheck(any(), any(), any());
         assertThat(existing.getStatus()).isEqualTo(StepStatus.EXECUTED);
     }
 
@@ -341,8 +364,12 @@ class EscalationServiceTest {
     }
 
     private EscalationStepRequest voiceCheckRequest() {
+        return voiceCheckRequest(StepStatus.EXECUTED);
+    }
+
+    private EscalationStepRequest voiceCheckRequest(StepStatus status) {
         return new EscalationStepRequest(
-                StepType.VOICE_CHECK, 1, StepStatus.EXECUTED, EXECUTED_AT,
+                StepType.VOICE_CHECK, 1, status, EXECUTED_AT,
                 null, null, null
         );
     }
