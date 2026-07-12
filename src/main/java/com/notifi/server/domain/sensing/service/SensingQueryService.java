@@ -1,8 +1,6 @@
 package com.notifi.server.domain.sensing.service;
 
-import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
@@ -19,7 +17,6 @@ import com.notifi.server.domain.sensing.repository.PoseClipRepository;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
-import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -42,13 +39,13 @@ public class SensingQueryService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final PoseClipRepository poseClipRepository;
     private final DeviceRepository deviceRepository;
-    private final CareRelationshipRepository careRelationshipRepository;
-    private final CareTargetRepository careTargetRepository;
+    private final CareTargetAccessValidator accessValidator;
 
     // ── S1: 실시간 상태 대시보드 ───────────────────────────────────────────────
     @Transactional(readOnly = true)
     public CareTargetStatusResponse getStatus(Long userId, Long careTargetId) {
-        verifyRelationship(userId, careTargetId);
+        // 보호자뿐 아니라 노인 본인 앱에서도 자기 상태를 볼 수 있다
+        accessValidator.requireRelationshipOrSelf(userId, careTargetId);
 
         SensingEvent latest = sensingEventRepository
                 .findFirstByCareTargetIdOrderByDetectedAtDesc(careTargetId)
@@ -87,7 +84,7 @@ public class SensingQueryService {
             EventType eventType, Instant from, Instant to,
             Pageable pageable) {
 
-        verifyRelationship(userId, careTargetId);
+        accessValidator.requireRelationship(userId, careTargetId);
 
         Page<SensingEvent> page = sensingEventRepository
                 .findEvents(careTargetId, eventType, from, to, pageable);
@@ -114,19 +111,9 @@ public class SensingQueryService {
     public PoseClipResponse getPoseClip(Long userId, Long sensingEventId) {
         SensingEvent event = sensingEventRepository.findById(sensingEventId)
                 .orElseThrow(() -> new BusinessException(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
-        verifyRelationship(userId, event.getCareTargetId());
+        accessValidator.requireRelationship(userId, event.getCareTargetId());
         PoseClip clip = poseClipRepository.findBySensingEventId(sensingEventId)
                 .orElseThrow(() -> new BusinessException(SensingErrorCode.POSE_CLIP_NOT_FOUND));
         return PoseClipResponse.from(clip);
-    }
-
-    // ── private ───────────────────────────────────────────────────────────────
-    private void verifyRelationship(Long userId, Long careTargetId) {
-        if (!careRelationshipRepository.existsByUserIdAndCareTargetId(userId, careTargetId)) {
-            if (careTargetRepository.existsById(careTargetId)) {
-                throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
-            }
-            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
-        }
     }
 }

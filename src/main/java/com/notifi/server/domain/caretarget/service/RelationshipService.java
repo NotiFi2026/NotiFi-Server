@@ -9,6 +9,8 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
+import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
 import com.notifi.server.global.exception.BusinessException;
@@ -32,6 +34,7 @@ public class RelationshipService {
     private final CareTargetRepository careTargetRepository;
     private final UserRepository userRepository;
     private final InviteCodeStore inviteCodeStore;
+    private final CareTargetAccessValidator accessValidator;
 
     @Value("${invite.link-base-url}")
     private String inviteLinkBaseUrl;
@@ -41,7 +44,7 @@ public class RelationshipService {
     @Transactional(readOnly = true)
     public InviteCodeCreateResponse issueInviteCode(Long userId, Long careTargetId,
                                                      InviteCodeCreateRequest request) {
-        requirePrimaryOf(userId, careTargetId);
+        accessValidator.requirePrimary(userId, careTargetId);
 
         short priority = request.notifyPriority() != null ? request.notifyPriority() : 1;
         InviteCodePayload payload = new InviteCodePayload(careTargetId, request.relationshipType(),
@@ -50,6 +53,22 @@ public class RelationshipService {
         String code = inviteCodeStore.issue(payload);
         String inviteUrl = inviteLinkBaseUrl + "/" + code;
         return new InviteCodeCreateResponse(code, inviteUrl, inviteCodeStore.nextExpiresAt());
+    }
+
+    // ── R5: 노인 계정 연결코드 발급 ─────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public RecipientCodeCreateResponse issueRecipientCode(Long userId, Long careTargetId) {
+        accessValidator.requirePrimary(userId, careTargetId);
+
+        CareTarget careTarget = careTargetRepository.findById(careTargetId)
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND));
+        if (careTarget.getUserId() != null) {
+            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
+        }
+
+        String code = inviteCodeStore.issueRecipientCode(new RecipientCodePayload(careTargetId, userId));
+        return new RecipientCodeCreateResponse(code, inviteCodeStore.nextExpiresAt());
     }
 
     // ── R1-c: 초대코드 미리보기 (코드 유지) ────────────────────────────────────
@@ -76,6 +95,13 @@ public class RelationshipService {
 
     @Transactional
     public InviteCodeAcceptResponse acceptInviteCode(Long userId, String code) {
+        // 노인 계정은 보호자가 될 수 없다 — 코드 소모(findAndDelete) 전에 차단
+        User caller = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND));
+        if (caller.getRole() == Role.CARE_RECIPIENT) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+
         InviteCodePayload payload = inviteCodeStore.findAndDelete(code)
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
 
@@ -101,7 +127,7 @@ public class RelationshipService {
 
     @Transactional(readOnly = true)
     public List<GuardianResponse> getGuardians(Long userId, Long careTargetId) {
-        getRelationshipOrThrow(userId, careTargetId);
+        accessValidator.getRelationshipOrThrow(userId, careTargetId);
 
         List<CareRelationship> relationships =
                 careRelationshipRepository.findGuardiansByCareTargetId(careTargetId);
@@ -123,7 +149,7 @@ public class RelationshipService {
         CareRelationship target = careRelationshipRepository.findById(relationshipId)
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.RELATIONSHIP_NOT_FOUND));
 
-        requirePrimaryOf(userId, target.getCareTarget().getId());
+        accessValidator.requirePrimary(userId, target.getCareTarget().getId());
         target.update(request.relationshipType(), request.notifyPriority());
         return RelationshipResponse.from(target);
     }
@@ -135,32 +161,12 @@ public class RelationshipService {
         CareRelationship target = careRelationshipRepository.findById(relationshipId)
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.RELATIONSHIP_NOT_FOUND));
 
-        requirePrimaryOf(userId, target.getCareTarget().getId());
+        accessValidator.requirePrimary(userId, target.getCareTarget().getId());
 
         if (target.isPrimary()) {
             throw new BusinessException(RelationshipErrorCode.CANNOT_DELETE_PRIMARY);
         }
 
         careRelationshipRepository.delete(target);
-    }
-
-    // ── private ──────────────────────────────────────────────────────────────
-
-    private CareRelationship getRelationshipOrThrow(Long userId, Long careTargetId) {
-        return careRelationshipRepository
-                .findByUserIdAndCareTargetId(userId, careTargetId)
-                .orElseThrow(() -> {
-                    if (careTargetRepository.existsById(careTargetId)) {
-                        throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
-                    }
-                    throw new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
-                });
-    }
-
-    private void requirePrimaryOf(Long userId, Long careTargetId) {
-        CareRelationship cr = getRelationshipOrThrow(userId, careTargetId);
-        if (!cr.isPrimary()) {
-            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
-        }
     }
 }

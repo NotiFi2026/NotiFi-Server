@@ -33,6 +33,18 @@ public class RelationshipController {
         return ApiResponse.success(relationshipService.issueInviteCode(userId, id, request));
     }
 
+    // R5: 노인 계정 연결코드 발급 (주 보호자)
+    @Operation(summary = "[R5] 노인 계정 연결코드 발급",
+               description = "주 보호자가 노인 본인 앱 가입용 8자리 연결코드를 발급한다. 코드는 24시간 유효하며 일회성이고, 이미 계정이 연결된 노인은 409 CARE_TARGET_ALREADY_LINKED로 거부된다. (권한: 관계 — 주 보호자)")
+    @PostMapping("/api/v1/care-targets/{id}/recipient-codes")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<RecipientCodeCreateResponse> issueRecipientCode(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id
+    ) {
+        return ApiResponse.success(relationshipService.issueRecipientCode(userId, id));
+    }
+
     // R1-c: 초대코드 미리보기 (코드 유지 — 수락 다이얼로그 정보 제공)
     @Operation(summary = "[R1-c] 초대코드 미리보기",
                description = "초대 링크를 클릭한 사용자에게 노인 이름·초대자·관계 유형을 반환한다. 코드를 소모하지 않으므로 수락 전 다이얼로그 표시에 사용한다. (권한: 인증)")

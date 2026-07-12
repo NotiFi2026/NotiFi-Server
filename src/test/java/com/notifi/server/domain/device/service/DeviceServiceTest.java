@@ -1,8 +1,7 @@
 package com.notifi.server.domain.device.service;
 
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.device.dto.DeviceCreateRequest;
 import com.notifi.server.domain.device.dto.DeviceCreateResponse;
 import com.notifi.server.domain.device.dto.DeviceResponse;
@@ -31,14 +30,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceServiceTest {
 
     @Mock DeviceRepository deviceRepository;
-    @Mock CareRelationshipRepository careRelationshipRepository;
-    @Mock CareTargetRepository careTargetRepository;
+    @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks DeviceService deviceService;
 
@@ -47,7 +46,6 @@ class DeviceServiceTest {
     @Test
     @DisplayName("register: 정상 등록 → device_id 반환")
     void register_success() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
         given(deviceRepository.existsByDeviceUid("AA:BB:CC:DD:EE:FF")).willReturn(false);
         given(deviceRepository.save(any())).willAnswer(inv -> {
             Device d = inv.getArgument(0);
@@ -64,7 +62,6 @@ class DeviceServiceTest {
     @Test
     @DisplayName("register: device_uid 중복 → DEVICE_ALREADY_EXISTS")
     void register_duplicateUid_throws() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
         given(deviceRepository.existsByDeviceUid("AA:BB:CC:DD:EE:FF")).willReturn(true);
 
         DeviceCreateRequest req = new DeviceCreateRequest("AA:BB:CC:DD:EE:FF", null, null, null, null);
@@ -77,8 +74,8 @@ class DeviceServiceTest {
     @Test
     @DisplayName("register: 관계 없고 노인 존재 → ACCESS_DENIED")
     void register_noRelationship_targetExists_accessDenied() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(false);
-        given(careTargetRepository.existsById(45L)).willReturn(true);
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requireRelationship(1L, 45L);
 
         DeviceCreateRequest req = new DeviceCreateRequest("AA:BB:CC:DD:EE:FF", null, null, null, null);
         assertThatThrownBy(() -> deviceService.register(1L, 45L, req))
@@ -90,7 +87,6 @@ class DeviceServiceTest {
     @Test
     @DisplayName("register: 동시 요청으로 DB unique 위반 → DEVICE_ALREADY_EXISTS")
     void register_concurrentDuplicate_throws() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
         given(deviceRepository.existsByDeviceUid("AA:BB:CC:DD:EE:FF")).willReturn(false);
         given(deviceRepository.save(any())).willThrow(new DataIntegrityViolationException("dup"));
 
@@ -104,8 +100,8 @@ class DeviceServiceTest {
     @Test
     @DisplayName("register: 노인 없음 → CARE_TARGET_NOT_FOUND")
     void register_targetNotFound() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 99L)).willReturn(false);
-        given(careTargetRepository.existsById(99L)).willReturn(false);
+        willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .given(accessValidator).requireRelationship(1L, 99L);
 
         DeviceCreateRequest req = new DeviceCreateRequest("AA:BB:CC:DD:EE:FF", null, null, null, null);
         assertThatThrownBy(() -> deviceService.register(1L, 99L, req))
@@ -119,7 +115,6 @@ class DeviceServiceTest {
     @Test
     @DisplayName("list: 목록 2건 정상 반환 및 DTO 매핑")
     void list_success() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         Device d1 = Device.create(45L, "AA:BB:CC:DD:EE:FF", "거실", null, NodeRole.RECEIVER, null);
         Device d2 = Device.create(45L, "11:22:33:44:55:66", "침실", null, NodeRole.SENDER, null);
@@ -142,7 +137,6 @@ class DeviceServiceTest {
         ReflectionTestUtils.setField(device, "id", 10L);
 
         given(deviceRepository.findById(10L)).willReturn(Optional.of(device));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         DeviceUpdateRequest req = new DeviceUpdateRequest("침실", null, null, DeviceStatus.INACTIVE);
         DeviceResponse result = deviceService.update(1L, 10L, req);
@@ -173,7 +167,6 @@ class DeviceServiceTest {
         ReflectionTestUtils.setField(device, "id", 10L);
 
         given(deviceRepository.findById(10L)).willReturn(Optional.of(device));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         deviceService.delete(1L, 10L);
 

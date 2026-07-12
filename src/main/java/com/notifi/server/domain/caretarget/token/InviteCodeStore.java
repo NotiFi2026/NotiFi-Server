@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 public class InviteCodeStore {
 
     private static final String KEY_PREFIX = "invite_code:";
+    // 노인 계정 연결코드 — 보호자 초대코드와 키 분리로 교차 사용 원천 차단
+    private static final String RECIPIENT_KEY_PREFIX = "recipient_code:";
     // 0, O, I, l, 1 제외 — 육안 혼동 방지
     private static final String CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int CODE_LENGTH = 8;
@@ -29,14 +31,11 @@ public class InviteCodeStore {
     private long codeTtlSeconds;
 
     public String issue(InviteCodePayload payload) {
-        String code = generateUniqueCode();
-        try {
-            String json = objectMapper.writeValueAsString(payload);
-            redisTemplate.opsForValue().set(key(code), json, Duration.ofSeconds(codeTtlSeconds));
-        } catch (Exception e) {
-            throw new IllegalStateException("invite code serialization failed", e);
-        }
-        return code;
+        return issueWithPrefix(KEY_PREFIX, payload);
+    }
+
+    public String issueRecipientCode(RecipientCodePayload payload) {
+        return issueWithPrefix(RECIPIENT_KEY_PREFIX, payload);
     }
 
     public Instant nextExpiresAt() {
@@ -63,19 +62,39 @@ public class InviteCodeStore {
 
     /** 코드 조회와 삭제를 원자적으로 수행 — 동시 수락 방지. */
     public Optional<InviteCodePayload> findAndDelete(String code) {
-        String json = redisTemplate.opsForValue().getAndDelete(key(code));
+        return getAndDelete(KEY_PREFIX, code, InviteCodePayload.class);
+    }
+
+    /** 노인 연결코드 조회·삭제 원자 수행 — 동시 가입 방지. */
+    public Optional<RecipientCodePayload> findAndDeleteRecipientCode(String code) {
+        return getAndDelete(RECIPIENT_KEY_PREFIX, code, RecipientCodePayload.class);
+    }
+
+    private String issueWithPrefix(String prefix, Object payload) {
+        String code = generateUniqueCode(prefix);
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            redisTemplate.opsForValue().set(prefix + code, json, Duration.ofSeconds(codeTtlSeconds));
+        } catch (Exception e) {
+            throw new IllegalStateException("invite code serialization failed", e);
+        }
+        return code;
+    }
+
+    private <T> Optional<T> getAndDelete(String prefix, String code, Class<T> type) {
+        String json = redisTemplate.opsForValue().getAndDelete(prefix + code);
         if (json == null) return Optional.empty();
         try {
-            return Optional.of(objectMapper.readValue(json, InviteCodePayload.class));
+            return Optional.of(objectMapper.readValue(json, type));
         } catch (Exception e) {
             return Optional.empty();
         }
     }
 
-    private String generateUniqueCode() {
+    private String generateUniqueCode(String prefix) {
         for (int attempt = 0; attempt < 10; attempt++) {
             String code = randomCode();
-            if (!Boolean.TRUE.equals(redisTemplate.hasKey(key(code)))) {
+            if (!Boolean.TRUE.equals(redisTemplate.hasKey(prefix + code))) {
                 return code;
             }
         }

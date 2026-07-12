@@ -1,8 +1,7 @@
 package com.notifi.server.domain.sensing.service;
 
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
-import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
-import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.entity.NodeRole;
 import com.notifi.server.domain.device.repository.DeviceRepository;
@@ -37,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
 class SensingQueryServiceTest {
@@ -45,8 +46,7 @@ class SensingQueryServiceTest {
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock PoseClipRepository poseClipRepository;
     @Mock DeviceRepository deviceRepository;
-    @Mock CareRelationshipRepository careRelationshipRepository;
-    @Mock CareTargetRepository careTargetRepository;
+    @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks SensingQueryService sensingQueryService;
 
@@ -57,7 +57,6 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 최신 이벤트·위험도·디바이스 매핑, todayMetrics·activeEscalation null")
     void getStatus_withLatestEvent_mapsFieldsCorrectly() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
@@ -87,7 +86,6 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 이벤트 없으면 currentRiskLevel·lastActivityAt null")
     void getStatus_noEvents_returnsNullRisk() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
         given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
                 .willReturn(Optional.empty());
         given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
@@ -100,10 +98,22 @@ class SensingQueryServiceTest {
     }
 
     @Test
-    @DisplayName("getStatus: 관계 없고 노인 존재 → ACCESS_DENIED")
+    @DisplayName("getStatus: 본인·관계 검증 통과(노인 본인 포함) → requireRelationshipOrSelf 위임")
+    void getStatus_selfAccess_delegatesToOrSelfGuard() {
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+                .willReturn(Optional.empty());
+        given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
+
+        sensingQueryService.getStatus(9L, 45L);
+
+        then(accessValidator).should().requireRelationshipOrSelf(9L, 45L);
+    }
+
+    @Test
+    @DisplayName("getStatus: 관계도 본인도 아님(노인 존재) → ACCESS_DENIED")
     void getStatus_noRelationship_targetExists_accessDenied() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(false);
-        given(careTargetRepository.existsById(45L)).willReturn(true);
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requireRelationshipOrSelf(1L, 45L);
 
         assertThatThrownBy(() -> sensingQueryService.getStatus(1L, 45L))
                 .isInstanceOf(BusinessException.class)
@@ -114,8 +124,8 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 노인 없음 → CARE_TARGET_NOT_FOUND")
     void getStatus_targetNotFound() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 99L)).willReturn(false);
-        given(careTargetRepository.existsById(99L)).willReturn(false);
+        willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .given(accessValidator).requireRelationshipOrSelf(1L, 99L);
 
         assertThatThrownBy(() -> sensingQueryService.getStatus(1L, 99L))
                 .isInstanceOf(BusinessException.class)
@@ -128,7 +138,6 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getEvents: 포즈클립 없는 이벤트 → has_replay=false")
     void getEvents_withRiskAssessment_noClip_hasReplayFalse() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
@@ -154,7 +163,6 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getEvents: 포즈클립 있는 이벤트 → has_replay=true")
     void getEvents_withPoseClip_hasReplayTrue() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
@@ -175,7 +183,6 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getEvents: 위험도 없는 이벤트 → riskScore·riskLevel null, has_replay=false")
     void getEvents_noRiskAssessment_nullsRiskFields() {
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
@@ -203,7 +210,6 @@ class SensingQueryServiceTest {
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
 
         Instant start = Instant.parse("2026-06-27T03:22:00Z");
         Instant end   = Instant.parse("2026-06-27T03:22:05Z");
@@ -246,8 +252,8 @@ class SensingQueryServiceTest {
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(false);
-        given(careTargetRepository.existsById(45L)).willReturn(true);
+        willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
+                .given(accessValidator).requireRelationship(1L, 45L);
 
         assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 10L))
                 .isInstanceOf(BusinessException.class)
@@ -262,7 +268,6 @@ class SensingQueryServiceTest {
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
-        given(careRelationshipRepository.existsByUserIdAndCareTargetId(1L, 45L)).willReturn(true);
         given(poseClipRepository.findBySensingEventId(10L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 10L))

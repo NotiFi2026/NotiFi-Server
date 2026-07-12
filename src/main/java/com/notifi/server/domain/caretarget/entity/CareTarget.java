@@ -40,6 +40,10 @@ public class CareTarget {
     @Column(name = "emergency_memo", columnDefinition = "TEXT")
     private String emergencyMemo;
 
+    /** 노인 본인 계정(tb_user). 앱 미가입 노인은 NULL. */
+    @Column(name = "user_id")
+    private Long userId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -74,5 +78,13 @@ public class CareTarget {
 
     public void softDelete() {
         this.deletedAt = Instant.now();
+    }
+
+    /** 노인 본인 계정 연결. 이미 연결된 경우는 서비스에서 선검증하며, 여기는 방어선. */
+    public void linkUser(Long userId) {
+        if (this.userId != null) {
+            throw new IllegalStateException("care target already linked to a user");
+        }
+        this.userId = userId;
     }
 }
