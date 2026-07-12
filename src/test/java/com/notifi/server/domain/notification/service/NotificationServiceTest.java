@@ -4,6 +4,7 @@ import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.entity.Gender;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.entity.Notification;
 import com.notifi.server.domain.notification.entity.NotificationCategory;
@@ -52,7 +53,7 @@ class NotificationServiceTest {
     void dispatchVoiceCheck_unlinkedCareTarget_skips() {
         given(careTargetRepository.findById(45L)).willReturn(Optional.of(careTarget(45L, null)));
 
-        notificationService.dispatchVoiceCheck(100L, 10L, 45L);
+        notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
         then(fcmSender).shouldHaveNoInteractions();
         then(notificationRepository).should(never()).save(any());
@@ -68,7 +69,7 @@ class NotificationServiceTest {
         ));
         given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
 
-        notificationService.dispatchVoiceCheck(100L, 10L, 45L);
+        notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
         Map<String, String> expectedData = Map.of(
                 "type", "VOICE_CHECK",
@@ -98,7 +99,7 @@ class NotificationServiceTest {
         ));
         given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(false);
 
-        notificationService.dispatchVoiceCheck(100L, 10L, 45L);
+        notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());

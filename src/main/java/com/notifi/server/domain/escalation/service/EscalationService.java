@@ -12,6 +12,7 @@ import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.entity.ResolutionType;
 import com.notifi.server.domain.escalation.entity.StepStatus;
 import com.notifi.server.domain.escalation.entity.StepType;
+import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
@@ -23,6 +24,7 @@ import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ public class EscalationService {
     private final SensingEventRepository sensingEventRepository;
     private final NotificationService notificationService;
     private final CareTargetAccessValidator accessValidator;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EscalationStepResponse recordStep(Long escalationId, EscalationStepRequest req) {
@@ -72,10 +75,12 @@ public class EscalationService {
         }
 
         // 신규 VOICE_CHECK 진행 단계면 노인 앱으로 음성확인 푸시 (사후 기록 SKIPPED 등은 제외)
+        // FCM 발송은 커밋 이후(AFTER_COMMIT 리스너)에 실행 — 롤백 시 유령 푸시 방지
         if (isNew && req.stepType() == StepType.VOICE_CHECK
                 && (req.status() == StepStatus.PENDING || req.status() == StepStatus.EXECUTED)) {
             Long careTargetId = resolveCareTargetId(escalation);
-            notificationService.dispatchVoiceCheck(step.getId(), escalationId, careTargetId);
+            eventPublisher.publishEvent(
+                    new VoiceCheckRequestedEvent(step.getId(), escalationId, careTargetId));
         }
 
         return EscalationStepResponse.from(step);

@@ -8,6 +8,7 @@ import com.notifi.server.domain.escalation.dto.EscalationStepRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepResponse;
 import com.notifi.server.domain.escalation.dto.EscalationSummaryResponse;
 import com.notifi.server.domain.escalation.entity.*;
+import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -55,6 +57,7 @@ class EscalationServiceTest {
     @Mock SensingEventRepository sensingEventRepository;
     @Mock NotificationService notificationService;
     @Mock CareTargetAccessValidator accessValidator;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     @InjectMocks EscalationService escalationService;
 
@@ -86,8 +89,31 @@ class EscalationServiceTest {
 
         assertThat(res.stepId()).isEqualTo(100L);
         assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
-        then(notificationService).should().dispatchVoiceCheck(100L, 10L, CARE_TARGET_ID);
+        then(eventPublisher).should().publishEvent(
+                new VoiceCheckRequestedEvent(100L, 10L, CARE_TARGET_ID));
         then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK 신규(PENDING) → step 저장 + 노인 앱 음성확인 푸시")
+    void recordStep_voiceCheck_pending_dispatchesVoiceCheck() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep step = voiceCheckStep();
+        ReflectionTestUtils.setField(step, "id", 100L);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willReturn(step);
+        given(riskAssessmentRepository.findById(1L)).willReturn(Optional.of(makeRiskAssessment()));
+        given(sensingEventRepository.findById(5L)).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
+
+        escalationService.recordStep(10L, voiceCheckRequest(StepStatus.PENDING));
+
+        then(eventPublisher).should().publishEvent(
+                new VoiceCheckRequestedEvent(100L, 10L, CARE_TARGET_ID));
     }
 
     @Test
@@ -106,7 +132,7 @@ class EscalationServiceTest {
 
         escalationService.recordStep(10L, voiceCheckRequest(StepStatus.SKIPPED));
 
-        then(notificationService).should(never()).dispatchVoiceCheck(any(), any(), any());
+        then(eventPublisher).should(never()).publishEvent(any(VoiceCheckRequestedEvent.class));
     }
 
     @Test
@@ -156,7 +182,7 @@ class EscalationServiceTest {
 
         then(escalationStepRepository).should(never()).save(any());
         then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
-        then(notificationService).should(never()).dispatchVoiceCheck(any(), any(), any());
+        then(eventPublisher).should(never()).publishEvent(any(VoiceCheckRequestedEvent.class));
         assertThat(existing.getStatus()).isEqualTo(StepStatus.EXECUTED);
     }
 
