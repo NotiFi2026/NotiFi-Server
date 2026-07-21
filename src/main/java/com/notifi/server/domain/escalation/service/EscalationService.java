@@ -50,7 +50,8 @@ public class EscalationService {
 
     @Transactional
     public EscalationStepResponse recordStep(Long escalationId, EscalationStepRequest req) {
-        Escalation escalation = escalationRepository.findById(escalationId)
+        // 행 잠금 — E3 resolve와 직렬화해 SKIPPED 판정·USER_OK 자동 해소가 최신 상태 기준이 되게 함
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
 
         Optional<EscalationStep> existing =
@@ -132,7 +133,8 @@ public class EscalationService {
     // ── E3: 보호자 확인·해제 ──────────────────────────────────────────────────
     @Transactional
     public EscalationDetailResponse resolve(Long userId, Long escalationId, EscalationResolveRequest req) {
-        Escalation escalation = escalationRepository.findById(escalationId)
+        // 행 잠금 — recordStep(I2)과 직렬화 (동시 중복 resolve도 뒤진 쪽이 409)
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         SensingEvent event = resolveSensingEvent(escalation);
         accessValidator.requireRelationship(userId, event.getCareTargetId());

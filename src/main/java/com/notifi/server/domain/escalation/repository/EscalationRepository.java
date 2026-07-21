@@ -4,9 +4,11 @@ import com.notifi.server.domain.escalation.entity.Escalation;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +18,12 @@ import java.util.Optional;
 public interface EscalationRepository extends JpaRepository<Escalation, Long> {
 
     Optional<Escalation> findByRiskAssessmentId(Long riskAssessmentId);
+
+    // I2 recordStep ↔ E3 resolve 직렬화용 행 잠금 — 해소 직후 EMERGENCY_CALL이
+    // 낡은 IN_PROGRESS 판단으로 EXECUTED 기록되는 경쟁 상태 차단
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM Escalation e WHERE e.id = :id")
+    Optional<Escalation> findByIdForUpdate(@Param("id") Long id);
 
     // E1: care_target 기준 목록 — Long id 컬럼 연관이므로 theta-join
     @Query(value = "SELECT e FROM Escalation e, RiskAssessment ra, SensingEvent se "
