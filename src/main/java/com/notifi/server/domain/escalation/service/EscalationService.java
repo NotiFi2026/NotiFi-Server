@@ -75,6 +75,15 @@ public class EscalationService {
             isNew = true;
         }
 
+        // 노인이 음성 확인에 "괜찮다"(USER_OK)고 응답하면 에스컬레이션 자동 해소
+        if (req.stepType() == StepType.VOICE_CHECK
+                && req.status() == StepStatus.RESPONDED
+                && escalation.getStatus() == EscalationStatus.IN_PROGRESS
+                && req.responseDetail() != null
+                && "USER_OK".equals(req.responseDetail().get("response_result"))) {
+            escalation.resolve(ResolutionType.SELF_RESOLVED, "음성 확인 USER_OK 응답 자동 해소");
+        }
+
         // 신규 GUARDIAN_NOTIFY 단계일 때만 FCM 발송 (재시도 시 중복 발송 방지)
         if (isNew && req.stepType() == StepType.GUARDIAN_NOTIFY && req.guardianMessage() != null) {
             Long careTargetId = resolveCareTargetId(escalation);

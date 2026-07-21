@@ -37,6 +37,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -252,6 +253,48 @@ class EscalationServiceTest {
         assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
     }
 
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK RESPONDED + USER_OK → SELF_RESOLVED 자동 해소")
+    void recordStep_voiceCheck_userOk_autoResolves() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep existing = voiceCheckStep();
+        ReflectionTestUtils.setField(existing, "id", 100L);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.of(existing));
+
+        EscalationStepResponse res = escalationService.recordStep(10L,
+                voiceCheckRespondedRequest("USER_OK"));
+
+        assertThat(escalation.getStatus()).isEqualTo(EscalationStatus.RESOLVED);
+        assertThat(escalation.getResolutionType()).isEqualTo(ResolutionType.SELF_RESOLVED);
+        assertThat(escalation.getResolvedAt()).isNotNull();
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK RESPONDED + USER_NEEDS_HELP → 해소 없이 진행 유지")
+    void recordStep_voiceCheck_needsHelp_staysInProgress() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep existing = voiceCheckStep();
+        ReflectionTestUtils.setField(existing, "id", 100L);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.of(existing));
+
+        EscalationStepResponse res = escalationService.recordStep(10L,
+                voiceCheckRespondedRequest("USER_NEEDS_HELP"));
+
+        assertThat(escalation.getStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // listEscalations (E1)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -432,6 +475,15 @@ class EscalationServiceTest {
         return new EscalationStepRequest(
                 StepType.VOICE_CHECK, 1, status, EXECUTED_AT,
                 null, null, null
+        );
+    }
+
+    private EscalationStepRequest voiceCheckRespondedRequest(String responseResult) {
+        return new EscalationStepRequest(
+                StepType.VOICE_CHECK, 1, StepStatus.RESPONDED, EXECUTED_AT,
+                EXECUTED_AT.plusSeconds(8),
+                Map.of("response_result", responseResult, "stt_provider", "whisper"),
+                null
         );
     }
 
