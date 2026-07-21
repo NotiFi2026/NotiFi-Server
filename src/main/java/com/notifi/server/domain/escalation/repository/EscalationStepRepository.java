@@ -13,4 +13,7 @@ public interface EscalationStepRepository extends JpaRepository<EscalationStep, 
 
     // E2: 에스컬레이션 상세 — 단계별 진행 로그 (step_order 오름차순)
     List<EscalationStep> findByEscalationIdOrderByStepOrderAsc(Long escalationId);
+
+    // S1: 현재 진행 단계 = 가장 마지막에 기록된 step
+    Optional<EscalationStep> findFirstByEscalationIdOrderByStepOrderDesc(Long escalationId);
 }

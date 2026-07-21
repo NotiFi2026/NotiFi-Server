@@ -3,6 +3,10 @@ package com.notifi.server.domain.sensing.service;
 import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.escalation.dto.ActiveEscalationSummary;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.repository.EscalationRepository;
+import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
 import com.notifi.server.domain.sensing.dto.DeviceStatusItem;
 import com.notifi.server.domain.sensing.dto.PoseClipResponse;
@@ -20,6 +24,7 @@ import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +44,8 @@ public class SensingQueryService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final PoseClipRepository poseClipRepository;
     private final DeviceRepository deviceRepository;
+    private final EscalationRepository escalationRepository;
+    private final EscalationStepRepository escalationStepRepository;
     private final CareTargetAccessValidator accessValidator;
 
     // ── S1: 실시간 상태 대시보드 ───────────────────────────────────────────────
@@ -67,13 +74,23 @@ public class SensingQueryService {
                 .map(DeviceStatusItem::from)
                 .toList();
 
+        ActiveEscalationSummary activeEscalation = escalationRepository
+                .findByCareTargetIdAndStatus(careTargetId, EscalationStatus.IN_PROGRESS, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .map(e -> ActiveEscalationSummary.of(e,
+                        escalationStepRepository
+                                .findFirstByEscalationIdOrderByStepOrderDesc(e.getId())
+                                .orElse(null)))
+                .orElse(null);
+
         return new CareTargetStatusResponse(
                 careTargetId,
                 currentRiskLevel,
                 lastActivityAt,
                 null,    // todayMetrics: tb_activity_aggregate 미구현
                 devices,
-                null     // activeEscalation: E 도메인 보류
+                activeEscalation
         );
     }
 
