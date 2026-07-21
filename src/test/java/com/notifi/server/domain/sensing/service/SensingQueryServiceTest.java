@@ -5,6 +5,13 @@ import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.entity.NodeRole;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.escalation.entity.Escalation;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.entity.EscalationStep;
+import com.notifi.server.domain.escalation.entity.StepStatus;
+import com.notifi.server.domain.escalation.entity.StepType;
+import com.notifi.server.domain.escalation.repository.EscalationRepository;
+import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
 import com.notifi.server.domain.sensing.dto.PoseClipResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
@@ -46,6 +53,8 @@ class SensingQueryServiceTest {
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock PoseClipRepository poseClipRepository;
     @Mock DeviceRepository deviceRepository;
+    @Mock EscalationRepository escalationRepository;
+    @Mock EscalationStepRepository escalationStepRepository;
     @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks SensingQueryService sensingQueryService;
@@ -81,6 +90,32 @@ class SensingQueryServiceTest {
         assertThat(result.devices().get(0).room()).isEqualTo("거실");
         assertThat(result.todayMetrics()).isNull();
         assertThat(result.activeEscalation()).isNull();
+    }
+
+    @Test
+    @DisplayName("getStatus: 진행 중 에스컬레이션 있으면 active_escalation 요약 반환")
+    void getStatus_withActiveEscalation_mapsSummary() {
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+                .willReturn(Optional.empty());
+        given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
+
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 30L);
+        given(escalationRepository.findByCareTargetIdAndStatus(
+                eq(45L), eq(EscalationStatus.IN_PROGRESS), any()))
+                .willReturn(List.of(escalation));
+
+        EscalationStep latestStep = EscalationStep.record(30L, StepType.GUARDIAN_NOTIFY, (short) 2,
+                StepStatus.EXECUTED, DETECTED_AT, null, null);
+        given(escalationStepRepository.findFirstByEscalationIdOrderByStepOrderDesc(30L))
+                .willReturn(Optional.of(latestStep));
+
+        CareTargetStatusResponse result = sensingQueryService.getStatus(1L, 45L);
+
+        assertThat(result.activeEscalation()).isNotNull();
+        assertThat(result.activeEscalation().escalationId()).isEqualTo(30L);
+        assertThat(result.activeEscalation().currentStepType()).isEqualTo(StepType.GUARDIAN_NOTIFY);
+        assertThat(result.activeEscalation().startedAt()).isNotNull();
     }
 
     @Test

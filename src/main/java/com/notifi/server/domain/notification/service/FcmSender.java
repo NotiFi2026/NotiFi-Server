@@ -1,6 +1,7 @@
 package com.notifi.server.domain.notification.service;
 
 import com.google.firebase.messaging.AndroidConfig;
+import com.google.firebase.messaging.AndroidNotification;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
@@ -16,6 +17,9 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class FcmSender {
+
+    /** 앱(expo-notifications)이 생성하는 응급 알림 채널 ID */
+    private static final String EMERGENCY_CHANNEL_ID = "emergency";
 
     private final ObjectProvider<FirebaseMessaging> firebaseMessagingProvider;
 
@@ -47,6 +51,10 @@ public class FcmSender {
                 .putAllData(data)
                 .setAndroidConfig(AndroidConfig.builder()
                         .setPriority(AndroidConfig.Priority.HIGH)
+                        // 앱의 Android 알림 채널과 일치 필수 — 미지정 시 기본 채널로 떨어져 중요도 하향
+                        .setNotification(AndroidNotification.builder()
+                                .setChannelId(EMERGENCY_CHANNEL_ID)
+                                .build())
                         .build())
                 .build();
 

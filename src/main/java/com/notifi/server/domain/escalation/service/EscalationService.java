@@ -1,5 +1,7 @@
 package com.notifi.server.domain.escalation.service;
 
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
@@ -41,37 +43,56 @@ public class EscalationService {
     private final EscalationStepRepository escalationStepRepository;
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final SensingEventRepository sensingEventRepository;
+    private final CareTargetRepository careTargetRepository;
     private final NotificationService notificationService;
     private final CareTargetAccessValidator accessValidator;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EscalationStepResponse recordStep(Long escalationId, EscalationStepRequest req) {
-        Escalation escalation = escalationRepository.findById(escalationId)
+        // 행 잠금 — E3 resolve와 직렬화해 SKIPPED 판정·USER_OK 자동 해소가 최신 상태 기준이 되게 함
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
 
         Optional<EscalationStep> existing =
                 escalationStepRepository.findByEscalationIdAndStepType(escalationId, req.stepType());
+
+        // 이미 해소된 에스컬레이션의 EMERGENCY_CALL은 SKIPPED로 강제 — 보호자 확인 시 119 진행 차단
+        StepStatus effectiveStatus = req.status();
+        if (req.stepType() == StepType.EMERGENCY_CALL
+                && escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
+            effectiveStatus = StepStatus.SKIPPED;
+        }
 
         EscalationStep step;
         boolean isNew;
 
         if (existing.isPresent()) {
             step = existing.get();
-            step.updateProgress(req.status(), req.executedAt(), req.respondedAt(), req.responseDetail());
+            step.updateProgress(effectiveStatus, req.executedAt(), req.respondedAt(), req.responseDetail());
             isNew = false;
         } else {
             step = escalationStepRepository.save(EscalationStep.record(
                     escalationId, req.stepType(), req.stepOrder().shortValue(),
-                    req.status(), req.executedAt(), req.respondedAt(), req.responseDetail()
+                    effectiveStatus, req.executedAt(), req.respondedAt(), req.responseDetail()
             ));
             isNew = true;
+        }
+
+        // 노인이 음성 확인에 "괜찮다"(USER_OK)고 응답하면 에스컬레이션 자동 해소
+        if (req.stepType() == StepType.VOICE_CHECK
+                && req.status() == StepStatus.RESPONDED
+                && escalation.getStatus() == EscalationStatus.IN_PROGRESS
+                && req.responseDetail() != null
+                && "USER_OK".equals(req.responseDetail().get("response_result"))) {
+            escalation.resolve(ResolutionType.SELF_RESOLVED, "음성 확인 USER_OK 응답 자동 해소");
         }
 
         // 신규 GUARDIAN_NOTIFY 단계일 때만 FCM 발송 (재시도 시 중복 발송 방지)
         if (isNew && req.stepType() == StepType.GUARDIAN_NOTIFY && req.guardianMessage() != null) {
             Long careTargetId = resolveCareTargetId(escalation);
-            notificationService.dispatchGuardianNotify(step.getId(), careTargetId, req.guardianMessage());
+            notificationService.dispatchGuardianNotify(
+                    step.getId(), escalationId, careTargetId, req.guardianMessage());
         }
 
         // 신규 VOICE_CHECK 진행 단계면 노인 앱으로 음성확인 푸시 (사후 기록 SKIPPED 등은 제외)
@@ -83,7 +104,7 @@ public class EscalationService {
                     new VoiceCheckRequestedEvent(step.getId(), escalationId, careTargetId));
         }
 
-        return EscalationStepResponse.from(step);
+        return EscalationStepResponse.from(step, escalation.getStatus());
     }
 
     // ── E1: 에스컬레이션 목록 ─────────────────────────────────────────────────
@@ -102,20 +123,21 @@ public class EscalationService {
     public EscalationDetailResponse getDetail(Long userId, Long escalationId) {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        Long careTargetId = resolveCareTargetId(escalation);
-        accessValidator.requireRelationship(userId, careTargetId);
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireRelationship(userId, event.getCareTargetId());
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
-        return EscalationDetailResponse.of(escalation, steps);
+        return buildDetail(escalation, steps, event);
     }
 
     // ── E3: 보호자 확인·해제 ──────────────────────────────────────────────────
     @Transactional
     public EscalationDetailResponse resolve(Long userId, Long escalationId, EscalationResolveRequest req) {
-        Escalation escalation = escalationRepository.findById(escalationId)
+        // 행 잠금 — recordStep(I2)과 직렬화 (동시 중복 resolve도 뒤진 쪽이 409)
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        Long careTargetId = resolveCareTargetId(escalation);
-        accessValidator.requireRelationship(userId, careTargetId);
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireRelationship(userId, event.getCareTargetId());
 
         if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
             throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
@@ -129,15 +151,27 @@ public class EscalationService {
 
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
-        return EscalationDetailResponse.of(escalation, steps);
+        return buildDetail(escalation, steps, event);
     }
 
     // ── private ───────────────────────────────────────────────────────────────
     private Long resolveCareTargetId(Escalation escalation) {
+        return resolveSensingEvent(escalation).getCareTargetId();
+    }
+
+    private SensingEvent resolveSensingEvent(Escalation escalation) {
         RiskAssessment ra = riskAssessmentRepository.findById(escalation.getRiskAssessmentId())
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        SensingEvent event = sensingEventRepository.findById(ra.getSensingEventId())
+        return sensingEventRepository.findById(ra.getSensingEventId())
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        return event.getCareTargetId();
+    }
+
+    private EscalationDetailResponse buildDetail(Escalation escalation, List<EscalationStep> steps,
+                                                 SensingEvent event) {
+        String careTargetName = careTargetRepository.findById(event.getCareTargetId())
+                .map(CareTarget::getName)
+                .orElse(null);
+        return EscalationDetailResponse.of(
+                escalation, steps, event.getCareTargetId(), careTargetName, event.getEventType());
     }
 }

@@ -1,6 +1,9 @@
 package com.notifi.server.domain.escalation.service;
 
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.entity.Gender;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
@@ -37,6 +40,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +59,7 @@ class EscalationServiceTest {
     @Mock EscalationStepRepository escalationStepRepository;
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock SensingEventRepository sensingEventRepository;
+    @Mock CareTargetRepository careTargetRepository;
     @Mock NotificationService notificationService;
     @Mock CareTargetAccessValidator accessValidator;
     @Mock ApplicationEventPublisher eventPublisher;
@@ -78,7 +83,7 @@ class EscalationServiceTest {
         EscalationStep step = voiceCheckStep();
         ReflectionTestUtils.setField(step, "id", 100L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
                 .willReturn(Optional.empty());
         given(escalationStepRepository.save(any())).willReturn(step);
@@ -91,7 +96,7 @@ class EscalationServiceTest {
         assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
         then(eventPublisher).should().publishEvent(
                 new VoiceCheckRequestedEvent(100L, 10L, CARE_TARGET_ID));
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
     }
 
     @Test
@@ -103,7 +108,7 @@ class EscalationServiceTest {
         EscalationStep step = voiceCheckStep();
         ReflectionTestUtils.setField(step, "id", 100L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
                 .willReturn(Optional.empty());
         given(escalationStepRepository.save(any())).willReturn(step);
@@ -125,7 +130,7 @@ class EscalationServiceTest {
         EscalationStep step = voiceCheckStep();
         ReflectionTestUtils.setField(step, "id", 100L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
                 .willReturn(Optional.empty());
         given(escalationStepRepository.save(any())).willReturn(step);
@@ -152,7 +157,7 @@ class EscalationServiceTest {
                 null, null, null, null, "v0.1", null, EXECUTED_AT);
         ReflectionTestUtils.setField(event, "id", 5L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.GUARDIAN_NOTIFY))
                 .willReturn(Optional.empty());
         given(escalationStepRepository.save(any())).willReturn(step);
@@ -162,7 +167,7 @@ class EscalationServiceTest {
         escalationService.recordStep(10L, guardianNotifyRequest());
 
         then(notificationService).should().dispatchGuardianNotify(
-                eq(101L), eq(99L), any(EscalationStepRequest.GuardianMessage.class));
+                eq(101L), eq(10L), eq(99L), any(EscalationStepRequest.GuardianMessage.class));
     }
 
     @Test
@@ -174,14 +179,14 @@ class EscalationServiceTest {
         EscalationStep existing = voiceCheckStep();
         ReflectionTestUtils.setField(existing, "id", 100L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
                 .willReturn(Optional.of(existing));
 
         escalationService.recordStep(10L, voiceCheckRequest());
 
         then(escalationStepRepository).should(never()).save(any());
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
         then(eventPublisher).should(never()).publishEvent(any(VoiceCheckRequestedEvent.class));
         assertThat(existing.getStatus()).isEqualTo(StepStatus.EXECUTED);
     }
@@ -189,7 +194,7 @@ class EscalationServiceTest {
     @Test
     @DisplayName("recordStep: 존재하지 않는 escalation_id → ESCALATION_NOT_FOUND")
     void recordStep_unknownEscalation_throws() {
-        given(escalationRepository.findById(99L)).willReturn(Optional.empty());
+        given(escalationRepository.findByIdForUpdate(99L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> escalationService.recordStep(99L, voiceCheckRequest()))
                 .isInstanceOf(BusinessException.class)
@@ -208,13 +213,90 @@ class EscalationServiceTest {
         EscalationStep existing = guardianNotifyStep();
         ReflectionTestUtils.setField(existing, "id", 101L);
 
-        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
         given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.GUARDIAN_NOTIFY))
                 .willReturn(Optional.of(existing));
 
         escalationService.recordStep(10L, guardianNotifyRequest());
 
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("recordStep: 해소된 에스컬레이션의 EMERGENCY_CALL → SKIPPED로 강제 기록")
+    void recordStep_emergencyCall_resolvedEscalation_forcesSkipped() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+        escalation.resolve(ResolutionType.GUARDIAN_HANDLED, null);
+
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.EMERGENCY_CALL))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EscalationStepResponse res = escalationService.recordStep(10L, emergencyCallRequest());
+
+        assertThat(res.status()).isEqualTo(StepStatus.SKIPPED);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("recordStep: 진행 중 에스컬레이션의 EMERGENCY_CALL → 요청 status 그대로 기록")
+    void recordStep_emergencyCall_inProgress_keepsRequestedStatus() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.EMERGENCY_CALL))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EscalationStepResponse res = escalationService.recordStep(10L, emergencyCallRequest());
+
+        assertThat(res.status()).isEqualTo(StepStatus.EXECUTED);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK RESPONDED + USER_OK → SELF_RESOLVED 자동 해소")
+    void recordStep_voiceCheck_userOk_autoResolves() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep existing = voiceCheckStep();
+        ReflectionTestUtils.setField(existing, "id", 100L);
+
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.of(existing));
+
+        EscalationStepResponse res = escalationService.recordStep(10L,
+                voiceCheckRespondedRequest("USER_OK"));
+
+        assertThat(escalation.getStatus()).isEqualTo(EscalationStatus.RESOLVED);
+        assertThat(escalation.getResolutionType()).isEqualTo(ResolutionType.SELF_RESOLVED);
+        assertThat(escalation.getResolvedAt()).isNotNull();
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("recordStep: VOICE_CHECK RESPONDED + USER_NEEDS_HELP → 해소 없이 진행 유지")
+    void recordStep_voiceCheck_needsHelp_staysInProgress() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        EscalationStep existing = voiceCheckStep();
+        ReflectionTestUtils.setField(existing, "id", 100L);
+
+        given(escalationRepository.findByIdForUpdate(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.VOICE_CHECK))
+                .willReturn(Optional.of(existing));
+
+        EscalationStepResponse res = escalationService.recordStep(10L,
+                voiceCheckRespondedRequest("USER_NEEDS_HELP"));
+
+        assertThat(escalation.getStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -279,12 +361,17 @@ class EscalationServiceTest {
         given(escalationRepository.findById(30L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
+        given(careTargetRepository.findById(CARE_TARGET_ID))
+                .willReturn(Optional.of(CareTarget.create("박순자", null, Gender.FEMALE, null, null)));
         given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(30L))
                 .willReturn(List.of(s1, s2));
 
         EscalationDetailResponse res = escalationService.getDetail(USER_ID, 30L);
 
         assertThat(res.escalationId()).isEqualTo(30L);
+        assertThat(res.careTargetId()).isEqualTo(CARE_TARGET_ID);
+        assertThat(res.careTargetName()).isEqualTo("박순자");
+        assertThat(res.eventType()).isEqualTo(EventType.FALL);
         assertThat(res.steps()).hasSize(2);
         assertThat(res.steps().get(0).stepType()).isEqualTo(StepType.VOICE_CHECK);
         assertThat(res.steps().get(1).stepType()).isEqualTo(StepType.GUARDIAN_NOTIFY);
@@ -327,7 +414,7 @@ class EscalationServiceTest {
     void resolve_happyPath() {
         Escalation escalation = makeEscalationWithCareTarget(40L, CARE_TARGET_ID);
 
-        given(escalationRepository.findById(40L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(40L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
         given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(40L)).willReturn(List.of());
@@ -348,7 +435,7 @@ class EscalationServiceTest {
         // 먼저 한 번 해제
         escalation.resolve(ResolutionType.FALSE_ALARM, null);
 
-        given(escalationRepository.findById(41L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(41L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
 
@@ -364,7 +451,7 @@ class EscalationServiceTest {
     void resolve_invalidResolutionType() {
         Escalation escalation = makeEscalationWithCareTarget(42L, CARE_TARGET_ID);
 
-        given(escalationRepository.findById(42L)).willReturn(Optional.of(escalation));
+        given(escalationRepository.findByIdForUpdate(42L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
 
@@ -396,6 +483,22 @@ class EscalationServiceTest {
     private EscalationStepRequest voiceCheckRequest(StepStatus status) {
         return new EscalationStepRequest(
                 StepType.VOICE_CHECK, 1, status, EXECUTED_AT,
+                null, null, null
+        );
+    }
+
+    private EscalationStepRequest voiceCheckRespondedRequest(String responseResult) {
+        return new EscalationStepRequest(
+                StepType.VOICE_CHECK, 1, StepStatus.RESPONDED, EXECUTED_AT,
+                EXECUTED_AT.plusSeconds(8),
+                Map.of("response_result", responseResult, "stt_provider", "whisper"),
+                null
+        );
+    }
+
+    private EscalationStepRequest emergencyCallRequest() {
+        return new EscalationStepRequest(
+                StepType.EMERGENCY_CALL, 3, StepStatus.EXECUTED, EXECUTED_AT,
                 null, null, null
         );
     }

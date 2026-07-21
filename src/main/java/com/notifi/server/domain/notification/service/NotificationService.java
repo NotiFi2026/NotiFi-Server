@@ -40,9 +40,10 @@ public class NotificationService {
     /**
      * GUARDIAN_NOTIFY 단계 수신 시 호출.
      * careTargetId에 연결된 모든 보호자에게 FCM 푸시 발송 + tb_notification 기록.
+     * data 페이로드로 앱이 알림 탭 시 응급 화면(escalation_id)으로 딥링크한다.
      */
     @Transactional
-    public void dispatchGuardianNotify(Long escalationStepId, Long careTargetId,
+    public void dispatchGuardianNotify(Long escalationStepId, Long escalationId, Long careTargetId,
                                        GuardianMessage guardianMessage) {
         List<Long> guardianUserIds = careRelationshipRepository
                 .findGuardiansByCareTargetId(careTargetId)
@@ -61,6 +62,12 @@ public class NotificationService {
                 .collect(Collectors.groupingBy(FcmToken::getUserId));
 
         String body = buildBody(guardianMessage);
+        Map<String, String> data = Map.of(
+                "type", "GUARDIAN_NOTIFY",
+                "escalation_id", String.valueOf(escalationId),
+                "escalation_step_id", String.valueOf(escalationStepId),
+                "care_target_id", String.valueOf(careTargetId)
+        );
 
         for (Long userId : guardianUserIds) {
             Notification notification = Notification.create(
@@ -70,7 +77,7 @@ public class NotificationService {
             );
 
             List<FcmToken> tokens = tokensByUser.getOrDefault(userId, List.of());
-            sendAndSave(notification, tokens, guardianMessage.title(), body, Map.of());
+            sendAndSave(notification, tokens, guardianMessage.title(), body, data);
         }
     }
 
