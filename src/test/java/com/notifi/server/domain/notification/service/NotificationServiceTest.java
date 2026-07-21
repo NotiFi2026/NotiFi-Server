@@ -1,9 +1,12 @@
 package com.notifi.server.domain.notification.service;
 
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.entity.Gender;
+import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
+import com.notifi.server.domain.escalation.dto.EscalationStepRequest.GuardianMessage;
 import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.entity.Notification;
@@ -104,6 +107,37 @@ class NotificationServiceTest {
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(NotificationStatus.FAILED);
+    }
+
+    // ── dispatchGuardianNotify ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("dispatchGuardianNotify: GUARDIAN_NOTIFY data 페이로드(딥링크 키) 포함 발송")
+    void dispatchGuardianNotify_sendsDeepLinkData() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID)
+        ));
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+
+        notificationService.dispatchGuardianNotify(101L, 10L, 45L,
+                new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", "전화 확인을 권장합니다."));
+
+        Map<String, String> expectedData = Map.of(
+                "type", "GUARDIAN_NOTIFY",
+                "escalation_id", "10",
+                "escalation_step_id", "101",
+                "care_target_id", "45"
+        );
+        then(fcmSender).should().send(eq("token-1"), eq("낙상 의심"),
+                eq("낙상 가능성이 감지되었습니다. 전화 확인을 권장합니다."), eq(expectedData));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        then(notificationRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(NotificationStatus.SENT);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────

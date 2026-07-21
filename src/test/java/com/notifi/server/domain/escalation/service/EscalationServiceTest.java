@@ -92,7 +92,7 @@ class EscalationServiceTest {
         assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
         then(eventPublisher).should().publishEvent(
                 new VoiceCheckRequestedEvent(100L, 10L, CARE_TARGET_ID));
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
     }
 
     @Test
@@ -163,7 +163,7 @@ class EscalationServiceTest {
         escalationService.recordStep(10L, guardianNotifyRequest());
 
         then(notificationService).should().dispatchGuardianNotify(
-                eq(101L), eq(99L), any(EscalationStepRequest.GuardianMessage.class));
+                eq(101L), eq(10L), eq(99L), any(EscalationStepRequest.GuardianMessage.class));
     }
 
     @Test
@@ -182,7 +182,7 @@ class EscalationServiceTest {
         escalationService.recordStep(10L, voiceCheckRequest());
 
         then(escalationStepRepository).should(never()).save(any());
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
         then(eventPublisher).should(never()).publishEvent(any(VoiceCheckRequestedEvent.class));
         assertThat(existing.getStatus()).isEqualTo(StepStatus.EXECUTED);
     }
@@ -215,7 +215,7 @@ class EscalationServiceTest {
 
         escalationService.recordStep(10L, guardianNotifyRequest());
 
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
+        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
     }
 
     @Test

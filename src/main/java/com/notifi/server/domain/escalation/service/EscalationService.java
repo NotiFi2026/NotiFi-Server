@@ -87,7 +87,8 @@ public class EscalationService {
         // 신규 GUARDIAN_NOTIFY 단계일 때만 FCM 발송 (재시도 시 중복 발송 방지)
         if (isNew && req.stepType() == StepType.GUARDIAN_NOTIFY && req.guardianMessage() != null) {
             Long careTargetId = resolveCareTargetId(escalation);
-            notificationService.dispatchGuardianNotify(step.getId(), careTargetId, req.guardianMessage());
+            notificationService.dispatchGuardianNotify(
+                    step.getId(), escalationId, careTargetId, req.guardianMessage());
         }
 
         // 신규 VOICE_CHECK 진행 단계면 노인 앱으로 음성확인 푸시 (사후 기록 SKIPPED 등은 제외)
