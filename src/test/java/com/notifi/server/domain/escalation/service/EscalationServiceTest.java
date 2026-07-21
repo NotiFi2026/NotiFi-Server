@@ -1,6 +1,9 @@
 package com.notifi.server.domain.escalation.service;
 
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.entity.Gender;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
@@ -56,6 +59,7 @@ class EscalationServiceTest {
     @Mock EscalationStepRepository escalationStepRepository;
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock SensingEventRepository sensingEventRepository;
+    @Mock CareTargetRepository careTargetRepository;
     @Mock NotificationService notificationService;
     @Mock CareTargetAccessValidator accessValidator;
     @Mock ApplicationEventPublisher eventPublisher;
@@ -357,12 +361,17 @@ class EscalationServiceTest {
         given(escalationRepository.findById(30L)).willReturn(Optional.of(escalation));
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
+        given(careTargetRepository.findById(CARE_TARGET_ID))
+                .willReturn(Optional.of(CareTarget.create("박순자", null, Gender.FEMALE, null, null)));
         given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(30L))
                 .willReturn(List.of(s1, s2));
 
         EscalationDetailResponse res = escalationService.getDetail(USER_ID, 30L);
 
         assertThat(res.escalationId()).isEqualTo(30L);
+        assertThat(res.careTargetId()).isEqualTo(CARE_TARGET_ID);
+        assertThat(res.careTargetName()).isEqualTo("박순자");
+        assertThat(res.eventType()).isEqualTo(EventType.FALL);
         assertThat(res.steps()).hasSize(2);
         assertThat(res.steps().get(0).stepType()).isEqualTo(StepType.VOICE_CHECK);
         assertThat(res.steps().get(1).stepType()).isEqualTo(StepType.GUARDIAN_NOTIFY);

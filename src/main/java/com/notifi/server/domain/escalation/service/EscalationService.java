@@ -1,5 +1,7 @@
 package com.notifi.server.domain.escalation.service;
 
+import com.notifi.server.domain.caretarget.entity.CareTarget;
+import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.dto.EscalationResolveRequest;
@@ -41,6 +43,7 @@ public class EscalationService {
     private final EscalationStepRepository escalationStepRepository;
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final SensingEventRepository sensingEventRepository;
+    private final CareTargetRepository careTargetRepository;
     private final NotificationService notificationService;
     private final CareTargetAccessValidator accessValidator;
     private final ApplicationEventPublisher eventPublisher;
@@ -119,11 +122,11 @@ public class EscalationService {
     public EscalationDetailResponse getDetail(Long userId, Long escalationId) {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        Long careTargetId = resolveCareTargetId(escalation);
-        accessValidator.requireRelationship(userId, careTargetId);
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireRelationship(userId, event.getCareTargetId());
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
-        return EscalationDetailResponse.of(escalation, steps);
+        return buildDetail(escalation, steps, event);
     }
 
     // ── E3: 보호자 확인·해제 ──────────────────────────────────────────────────
@@ -131,8 +134,8 @@ public class EscalationService {
     public EscalationDetailResponse resolve(Long userId, Long escalationId, EscalationResolveRequest req) {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        Long careTargetId = resolveCareTargetId(escalation);
-        accessValidator.requireRelationship(userId, careTargetId);
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireRelationship(userId, event.getCareTargetId());
 
         if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
             throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
@@ -146,15 +149,27 @@ public class EscalationService {
 
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
-        return EscalationDetailResponse.of(escalation, steps);
+        return buildDetail(escalation, steps, event);
     }
 
     // ── private ───────────────────────────────────────────────────────────────
     private Long resolveCareTargetId(Escalation escalation) {
+        return resolveSensingEvent(escalation).getCareTargetId();
+    }
+
+    private SensingEvent resolveSensingEvent(Escalation escalation) {
         RiskAssessment ra = riskAssessmentRepository.findById(escalation.getRiskAssessmentId())
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        SensingEvent event = sensingEventRepository.findById(ra.getSensingEventId())
+        return sensingEventRepository.findById(ra.getSensingEventId())
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
-        return event.getCareTargetId();
+    }
+
+    private EscalationDetailResponse buildDetail(Escalation escalation, List<EscalationStep> steps,
+                                                 SensingEvent event) {
+        String careTargetName = careTargetRepository.findById(event.getCareTargetId())
+                .map(CareTarget::getName)
+                .orElse(null);
+        return EscalationDetailResponse.of(
+                escalation, steps, event.getCareTargetId(), careTargetName, event.getEventType());
     }
 }
