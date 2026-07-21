@@ -5,6 +5,7 @@ import com.notifi.server.domain.device.entity.Device;
 import com.notifi.server.domain.device.repository.DeviceRepository;
 import com.notifi.server.domain.escalation.dto.ActiveEscalationSummary;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
 import com.notifi.server.domain.sensing.dto.CareTargetStatusResponse;
@@ -78,10 +79,12 @@ public class SensingQueryService {
                 .findByCareTargetIdAndStatus(careTargetId, EscalationStatus.IN_PROGRESS, PageRequest.of(0, 1))
                 .stream()
                 .findFirst()
-                .map(e -> ActiveEscalationSummary.of(e,
-                        escalationStepRepository
-                                .findFirstByEscalationIdOrderByStepOrderDesc(e.getId())
-                                .orElse(null)))
+                .map(escalation -> {
+                    EscalationStep latestStep = escalationStepRepository
+                            .findFirstByEscalationIdOrderByStepOrderDesc(escalation.getId())
+                            .orElse(null);
+                    return ActiveEscalationSummary.of(escalation, latestStep);
+                })
                 .orElse(null);
 
         return new CareTargetStatusResponse(
