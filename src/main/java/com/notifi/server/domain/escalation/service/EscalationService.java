@@ -53,17 +53,24 @@ public class EscalationService {
         Optional<EscalationStep> existing =
                 escalationStepRepository.findByEscalationIdAndStepType(escalationId, req.stepType());
 
+        // 이미 해소된 에스컬레이션의 EMERGENCY_CALL은 SKIPPED로 강제 — 보호자 확인 시 119 진행 차단
+        StepStatus effectiveStatus = req.status();
+        if (req.stepType() == StepType.EMERGENCY_CALL
+                && escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
+            effectiveStatus = StepStatus.SKIPPED;
+        }
+
         EscalationStep step;
         boolean isNew;
 
         if (existing.isPresent()) {
             step = existing.get();
-            step.updateProgress(req.status(), req.executedAt(), req.respondedAt(), req.responseDetail());
+            step.updateProgress(effectiveStatus, req.executedAt(), req.respondedAt(), req.responseDetail());
             isNew = false;
         } else {
             step = escalationStepRepository.save(EscalationStep.record(
                     escalationId, req.stepType(), req.stepOrder().shortValue(),
-                    req.status(), req.executedAt(), req.respondedAt(), req.responseDetail()
+                    effectiveStatus, req.executedAt(), req.respondedAt(), req.responseDetail()
             ));
             isNew = true;
         }
@@ -83,7 +90,7 @@ public class EscalationService {
                     new VoiceCheckRequestedEvent(step.getId(), escalationId, careTargetId));
         }
 
-        return EscalationStepResponse.from(step);
+        return EscalationStepResponse.from(step, escalation.getStatus());
     }
 
     // ── E1: 에스컬레이션 목록 ─────────────────────────────────────────────────

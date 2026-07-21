@@ -217,6 +217,41 @@ class EscalationServiceTest {
         then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any());
     }
 
+    @Test
+    @DisplayName("recordStep: 해소된 에스컬레이션의 EMERGENCY_CALL → SKIPPED로 강제 기록")
+    void recordStep_emergencyCall_resolvedEscalation_forcesSkipped() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+        escalation.resolve(ResolutionType.GUARDIAN_HANDLED, null);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.EMERGENCY_CALL))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EscalationStepResponse res = escalationService.recordStep(10L, emergencyCallRequest());
+
+        assertThat(res.status()).isEqualTo(StepStatus.SKIPPED);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("recordStep: 진행 중 에스컬레이션의 EMERGENCY_CALL → 요청 status 그대로 기록")
+    void recordStep_emergencyCall_inProgress_keepsRequestedStatus() {
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 10L);
+
+        given(escalationRepository.findById(10L)).willReturn(Optional.of(escalation));
+        given(escalationStepRepository.findByEscalationIdAndStepType(10L, StepType.EMERGENCY_CALL))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        EscalationStepResponse res = escalationService.recordStep(10L, emergencyCallRequest());
+
+        assertThat(res.status()).isEqualTo(StepStatus.EXECUTED);
+        assertThat(res.escalationStatus()).isEqualTo(EscalationStatus.IN_PROGRESS);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // listEscalations (E1)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -396,6 +431,13 @@ class EscalationServiceTest {
     private EscalationStepRequest voiceCheckRequest(StepStatus status) {
         return new EscalationStepRequest(
                 StepType.VOICE_CHECK, 1, status, EXECUTED_AT,
+                null, null, null
+        );
+    }
+
+    private EscalationStepRequest emergencyCallRequest() {
+        return new EscalationStepRequest(
+                StepType.EMERGENCY_CALL, 3, StepStatus.EXECUTED, EXECUTED_AT,
                 null, null, null
         );
     }

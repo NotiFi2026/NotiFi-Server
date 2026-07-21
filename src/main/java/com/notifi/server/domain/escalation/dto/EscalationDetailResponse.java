@@ -26,7 +26,7 @@ public record EscalationDetailResponse(
                 e.getResolutionMemo(),
                 e.getStartedAt(),
                 e.getResolvedAt(),
-                steps.stream().map(EscalationStepResponse::from).toList()
+                steps.stream().map(s -> EscalationStepResponse.from(s, e.getStatus())).toList()
         );
     }
 }

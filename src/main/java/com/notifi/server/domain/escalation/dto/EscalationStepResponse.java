@@ -1,5 +1,6 @@
 package com.notifi.server.domain.escalation.dto;
 
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.entity.StepStatus;
 import com.notifi.server.domain.escalation.entity.StepType;
@@ -14,10 +15,11 @@ public record EscalationStepResponse(
         StepStatus status,
         Instant executedAt,
         Instant respondedAt,
-        Instant createdAt
+        Instant createdAt,
+        EscalationStatus escalationStatus
 ) {
 
-    public static EscalationStepResponse from(EscalationStep step) {
+    public static EscalationStepResponse from(EscalationStep step, EscalationStatus escalationStatus) {
         return new EscalationStepResponse(
                 step.getId(),
                 step.getEscalationId(),
@@ -26,7 +28,8 @@ public record EscalationStepResponse(
                 step.getStatus(),
                 step.getExecutedAt(),
                 step.getRespondedAt(),
-                step.getCreatedAt()
+                step.getCreatedAt(),
+                escalationStatus
         );
     }
 }
