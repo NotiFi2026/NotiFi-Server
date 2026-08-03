@@ -45,9 +45,19 @@ cp .env.example .env
 # 2. 전체 실행 (앱 + DB + Redis)
 docker compose up --build
 
-# 또는 인프라만 띄우고 IntelliJ에서 앱 실행
-docker compose up postgres redis
+# 또는 인프라만 띄우고 IntelliJ / gradlew 로 앱 실행
+docker compose up -d postgres redis
+./gradlew bootRun
 ```
+
+`.env` 는 세 방법 모두에서 읽힙니다 — compose 는 `env_file`, 나머지는
+`application.yaml` 의 `spring.config.import` 를 통해서입니다.
+
+> **IntelliJ 로 실행할 때는 실행 구성의 Working directory 가 프로젝트 루트여야 합니다.**
+> import 경로가 `file:./.env` 상대 경로라 프로세스 작업 디렉터리를 기준으로 찾습니다.
+> 못 찾아도 에러 없이 기본값으로 떨어지므로, `.env` 를 고쳤는데 반영이 안 되거나
+> `password authentication failed` 가 나면 이 설정부터 확인하세요.
+> `./gradlew bootRun` 은 Gradle 이 작업 디렉터리를 프로젝트 루트로 잡아 주므로 그대로 동작합니다.
 
 `GET http://localhost:8080/actuator/health` → `{"status":"UP"}` 확인
 

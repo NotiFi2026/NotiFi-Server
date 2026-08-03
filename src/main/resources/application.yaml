@@ -4,6 +4,12 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+  # .env 를 환경 변수처럼 읽는다. docker compose 는 env_file 로 이미 주입하지만
+  # gradlew bootRun / IntelliJ 실행은 .env 를 읽지 않아 기본값으로 떨어졌다.
+  # OS 환경 변수가 config import 보다 우선순위가 높으므로 컨테이너 동작은 그대로다.
+  config:
+    import: optional:file:./.env[.properties]
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/notifi}
     username: ${DB_USERNAME:notifi}
