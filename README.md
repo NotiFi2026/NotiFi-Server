@@ -45,9 +45,13 @@ cp .env.example .env
 # 2. 전체 실행 (앱 + DB + Redis)
 docker compose up --build
 
-# 또는 인프라만 띄우고 IntelliJ에서 앱 실행
-docker compose up postgres redis
+# 또는 인프라만 띄우고 IntelliJ / gradlew 로 앱 실행
+docker compose up -d postgres redis
+./gradlew bootRun
 ```
+
+`.env` 는 세 방법 모두에서 읽힙니다 — compose 는 `env_file`, 나머지는
+`application.yaml` 의 `spring.config.import` 를 통해서입니다.
 
 `GET http://localhost:8080/actuator/health` → `{"status":"UP"}` 확인
 
