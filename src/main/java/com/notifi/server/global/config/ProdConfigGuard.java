@@ -29,18 +29,19 @@ public class ProdConfigGuard {
             @Value("${cors.allowed-origins}") String corsAllowedOrigins
     ) {
         List<String> problems = new ArrayList<>();
-        if (BLOCKED_JWT_SECRETS.contains(jwtSecret)) {
-            problems.add("JWT_SECRET 이 dev 기본값/예시값입니다");
+        if (jwtSecret == null || jwtSecret.isBlank() || BLOCKED_JWT_SECRETS.contains(jwtSecret)) {
+            problems.add("JWT_SECRET 이 비어 있거나 dev 기본값/예시값입니다");
         }
-        if (DEV_INTERNAL_API_KEY.equals(internalApiKey)) {
-            problems.add("INTERNAL_API_KEY 가 dev 기본값입니다");
+        // 빈 키는 빈 X-Internal-Key 헤더와 일치해 내부 API 인증이 우회된다 — 반드시 차단
+        if (internalApiKey == null || internalApiKey.isBlank() || DEV_INTERNAL_API_KEY.equals(internalApiKey)) {
+            problems.add("INTERNAL_API_KEY 가 비어 있거나 dev 기본값입니다");
         }
-        // CorsConfig 와 동일하게 콤마 분리 — "https://a.com,*" 같은 조합도 차단
+        // CorsConfig 와 동일하게 콤마 분리 후 * 가 포함된 패턴은 전부 차단 ("https://*" 등 포함)
         boolean hasWildcardOrigin = Arrays.stream(corsAllowedOrigins.split(","))
                 .map(String::trim)
-                .anyMatch("*"::equals);
+                .anyMatch(origin -> origin.contains("*"));
         if (hasWildcardOrigin) {
-            problems.add("CORS_ALLOWED_ORIGINS 에 * 가 포함돼 있습니다 — 실제 도메인으로 제한하세요");
+            problems.add("CORS_ALLOWED_ORIGINS 에 * 가 포함된 패턴이 있습니다 — 실제 도메인으로 제한하세요");
         }
         if (!problems.isEmpty()) {
             throw new IllegalStateException("prod 설정 검증 실패: " + String.join(", ", problems));
