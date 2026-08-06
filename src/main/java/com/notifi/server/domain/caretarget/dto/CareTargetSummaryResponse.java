@@ -1,27 +1,25 @@
 package com.notifi.server.domain.caretarget.dto;
 
 import com.notifi.server.domain.caretarget.entity.CareRelationship;
+import com.notifi.server.domain.sensing.entity.RiskLevel;
 
 import java.time.Instant;
 
 public record CareTargetSummaryResponse(
         Long careTargetId,
         String name,
-        String currentRiskLevel,  // TODO: Sensing 도메인 구현 후 채움
-        Instant lastEventAt,      // TODO: Sensing 도메인 구현 후 채움
+        RiskLevel currentRiskLevel,
+        Instant lastEventAt,
         int deviceCount,
         boolean isPrimary
 ) {
-    public static CareTargetSummaryResponse from(CareRelationship cr) {
-        return from(cr, 0);
-    }
-
-    public static CareTargetSummaryResponse from(CareRelationship cr, int deviceCount) {
+    public static CareTargetSummaryResponse from(
+            CareRelationship cr, int deviceCount, RiskLevel currentRiskLevel, Instant lastEventAt) {
         return new CareTargetSummaryResponse(
                 cr.getCareTarget().getId(),
                 cr.getCareTarget().getName(),
-                null,
-                null,
+                currentRiskLevel,
+                lastEventAt,
                 deviceCount,
                 cr.isPrimary()
         );

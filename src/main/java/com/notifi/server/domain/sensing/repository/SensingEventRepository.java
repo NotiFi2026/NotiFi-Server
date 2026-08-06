@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface SensingEventRepository extends JpaRepository<SensingEvent, Long> {
@@ -18,6 +20,13 @@ public interface SensingEventRepository extends JpaRepository<SensingEvent, Long
 
     // S1: 가장 최근 이벤트 1건 (위험도·last_activity_at 산출)
     Optional<SensingEvent> findFirstByCareTargetIdOrderByDetectedAtDesc(Long careTargetId);
+
+    // C2: 노인별 최신 이벤트 일괄 조회 (N+1 방지, Postgres DISTINCT ON)
+    @Query(value = "SELECT DISTINCT ON (care_target_id) * FROM tb_sensing_event " +
+                   "WHERE care_target_id IN (:careTargetIds) " +
+                   "ORDER BY care_target_id, detected_at DESC",
+           nativeQuery = true)
+    List<SensingEvent> findLatestPerCareTarget(@Param("careTargetIds") Collection<Long> careTargetIds);
 
     // S2: 필터 페이지 조회 (nullable 파라미터)
     @Query("SELECT se FROM SensingEvent se WHERE se.careTargetId = :ctId " +

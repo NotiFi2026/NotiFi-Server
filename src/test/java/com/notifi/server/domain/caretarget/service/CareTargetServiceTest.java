@@ -13,6 +13,12 @@ import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.sensing.entity.EventType;
+import com.notifi.server.domain.sensing.entity.RiskAssessment;
+import com.notifi.server.domain.sensing.entity.RiskLevel;
+import com.notifi.server.domain.sensing.entity.SensingEvent;
+import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
+import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -46,6 +52,8 @@ class CareTargetServiceTest {
     @Mock CareRelationshipRepository careRelationshipRepository;
     @Mock UserRepository userRepository;
     @Mock DeviceRepository deviceRepository;
+    @Mock SensingEventRepository sensingEventRepository;
+    @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks CareTargetService careTargetService;
@@ -152,6 +160,33 @@ class CareTargetServiceTest {
         PageResponse<CareTargetSummaryResponse> result = careTargetService.getMyCareTargets(1L, pageable);
 
         assertThat(result.content().get(0).deviceCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("getMyCareTargets: 최신 이벤트 있으면 current_risk_level·last_event_at 채움")
+    void getMyCareTargets_withLatestEvent_fillsRiskFields() {
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+
+        java.time.Instant detectedAt = java.time.Instant.parse("2026-08-06T01:00:00Z");
+        SensingEvent latest = SensingEvent.create(45L, null, EventType.FALL,
+                null, null, null, null, "v0.1", null, detectedAt);
+        ReflectionTestUtils.setField(latest, "id", 5L);
+        RiskAssessment ra = RiskAssessment.of(5L, (short) 85, RiskLevel.DANGER, null, "v0.1", detectedAt);
+
+        PageRequest pageable = PageRequest.of(0, 20);
+        given(careRelationshipRepository.findByUserIdWithCareTarget(1L, pageable))
+                .willReturn(new PageImpl<>(List.of(cr), pageable, 1));
+        given(deviceRepository.deviceCountMap(List.of(45L))).willReturn(Map.of());
+        given(sensingEventRepository.findLatestPerCareTarget(List.of(45L))).willReturn(List.of(latest));
+        given(riskAssessmentRepository.findBySensingEventIdIn(List.of(5L))).willReturn(List.of(ra));
+
+        PageResponse<CareTargetSummaryResponse> result = careTargetService.getMyCareTargets(1L, pageable);
+
+        CareTargetSummaryResponse summary = result.content().get(0);
+        assertThat(summary.currentRiskLevel()).isEqualTo(RiskLevel.DANGER);
+        assertThat(summary.lastEventAt()).isEqualTo(detectedAt);
     }
 
     // ── getDetail (C3) ────────────────────────────────────────────────────
