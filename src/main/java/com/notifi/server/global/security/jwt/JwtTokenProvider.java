@@ -43,20 +43,26 @@ public class JwtTokenProvider {
         this.refreshTtl = refreshTtl;
     }
 
+    /** 토큰 용도 클레임 — 리프레시 토큰이 액세스 토큰으로 통용되는 것을 차단 */
+    private static final String CLAIM_TYPE = "typ";
+    private static final String TYPE_ACCESS = "access";
+    private static final String TYPE_REFRESH = "refresh";
+
     public String createAccessToken(Long userId, String role) {
-        return buildToken(userId, role, accessTtl);
+        return buildToken(userId, role, accessTtl, TYPE_ACCESS);
     }
 
     public String createRefreshToken(Long userId, String role) {
-        return buildToken(userId, role, refreshTtl);
+        return buildToken(userId, role, refreshTtl, TYPE_REFRESH);
     }
 
     /**
-     * 토큰에서 Authentication 추출.
-     * 만료 → TOKEN_EXPIRED, 위조/형식 오류 → INVALID_CREDENTIALS.
+     * 액세스 토큰에서 Authentication 추출. 리프레시 토큰은 거부한다.
+     * 만료 → TOKEN_EXPIRED, 위조/형식 오류/용도 불일치 → INVALID_CREDENTIALS.
      */
     public Authentication getAuthentication(String token) {
         Claims claims = parseClaims(token);
+        requireType(claims, TYPE_ACCESS);
         Long userId = Long.parseLong(claims.getSubject());
         String role  = claims.get("role", String.class);
         return new UsernamePasswordAuthenticationToken(
@@ -65,17 +71,33 @@ public class JwtTokenProvider {
         );
     }
 
+    /**
+     * 리프레시 토큰 검증 후 userId 반환. 액세스 토큰은 거부한다.
+     */
+    public Long getRefreshTokenUserId(String token) {
+        Claims claims = parseClaims(token);
+        requireType(claims, TYPE_REFRESH);
+        return Long.parseLong(claims.getSubject());
+    }
+
     // ── private ───────────────────────────────────────────────────────────
 
-    private String buildToken(Long userId, String role, long ttlSeconds) {
+    private String buildToken(Long userId, String role, long ttlSeconds, String type) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("role", role)
+                .claim(CLAIM_TYPE, type)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(ttlSeconds)))
                 .signWith(signingKey)
                 .compact();
+    }
+
+    private void requireType(Claims claims, String expected) {
+        if (!expected.equals(claims.get(CLAIM_TYPE, String.class))) {
+            throw new BusinessException(CommonErrorCode.INVALID_CREDENTIALS);
+        }
     }
 
     private Claims parseClaims(String token) {

@@ -16,11 +16,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -63,6 +60,16 @@ class AuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("signup: ADMIN 자가가입 → SIGNUP_ROLE_NOT_ALLOWED")
+    void signup_adminBlocked() {
+        assertThatThrownBy(() -> authService.signup(new SignupRequest("admin@b.com", "pw123456", "관리자", Role.ADMIN)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(AuthErrorCode.SIGNUP_ROLE_NOT_ALLOWED);
+        then(userRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -138,12 +145,10 @@ class AuthServiceTest {
     // ── refresh ───────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("refresh: 정상 갱신 + 토큰 회전")
+    @DisplayName("refresh: 정상 갱신 + 토큰 회전 (role은 DB 기준)")
     void refresh_success() {
         User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
-        var auth = new UsernamePasswordAuthenticationToken(
-                1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
-        given(jwtTokenProvider.getAuthentication("old-refresh")).willReturn(auth);
+        given(jwtTokenProvider.getRefreshTokenUserId("old-refresh")).willReturn(1L);
         given(refreshTokenStore.find(1L)).willReturn(Optional.of("old-refresh"));
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(jwtTokenProvider.createAccessToken(1L, "GUARDIAN")).willReturn("new-access");
@@ -161,9 +166,7 @@ class AuthServiceTest {
     void refresh_inactiveUser() {
         User user = User.create("a@b.com", "hashed", "김보호", Role.GUARDIAN);
         user.deactivate();
-        var auth = new UsernamePasswordAuthenticationToken(
-                1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
-        given(jwtTokenProvider.getAuthentication("old-refresh")).willReturn(auth);
+        given(jwtTokenProvider.getRefreshTokenUserId("old-refresh")).willReturn(1L);
         given(refreshTokenStore.find(1L)).willReturn(Optional.of("old-refresh"));
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
@@ -177,9 +180,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("refresh: Redis에 토큰 없으면 INVALID_REFRESH_TOKEN")
     void refresh_notInRedis() {
-        var auth = new UsernamePasswordAuthenticationToken(
-                1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
-        given(jwtTokenProvider.getAuthentication("token")).willReturn(auth);
+        given(jwtTokenProvider.getRefreshTokenUserId("token")).willReturn(1L);
         given(refreshTokenStore.find(1L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("token")))
@@ -191,15 +192,26 @@ class AuthServiceTest {
     @Test
     @DisplayName("refresh: Redis 값과 불일치 → INVALID_REFRESH_TOKEN")
     void refresh_tokenMismatch() {
-        var auth = new UsernamePasswordAuthenticationToken(
-                1L, null, List.of(new SimpleGrantedAuthority("ROLE_GUARDIAN")));
-        given(jwtTokenProvider.getAuthentication("incoming")).willReturn(auth);
+        given(jwtTokenProvider.getRefreshTokenUserId("incoming")).willReturn(1L);
         given(refreshTokenStore.find(1L)).willReturn(Optional.of("stored-different"));
 
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("incoming")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
+    }
+
+    @Test
+    @DisplayName("refresh: 토큰 파싱·용도 검증 실패 → INVALID_REFRESH_TOKEN 재매핑")
+    void refresh_invalidToken() {
+        given(jwtTokenProvider.getRefreshTokenUserId("access-token"))
+                .willThrow(new BusinessException(CommonErrorCode.INVALID_CREDENTIALS));
+
+        assertThatThrownBy(() -> authService.refresh(new RefreshRequest("access-token")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        then(refreshTokenStore).shouldHaveNoInteractions();
     }
 
     // ── logout ────────────────────────────────────────────────────────────

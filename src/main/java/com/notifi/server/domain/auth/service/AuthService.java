@@ -11,7 +11,6 @@ import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,8 +28,8 @@ public class AuthService {
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
-        // 노인 계정은 연결코드 가입(A5) 전용 — 일반 회원가입으로 생성 불가
-        if (request.role() == Role.CARE_RECIPIENT) {
+        // 자가 가입은 보호자·사회복지사만 허용 — CARE_RECIPIENT는 연결코드 가입(A5) 전용, ADMIN은 자가 등록 불가
+        if (request.role() != Role.GUARDIAN && request.role() != Role.SOCIAL_WORKER) {
             throw new BusinessException(AuthErrorCode.SIGNUP_ROLE_NOT_ALLOWED);
         }
         String email = normalizeEmail(request.email());
@@ -67,10 +66,8 @@ public class AuthService {
     }
 
     public TokenResponse refresh(RefreshRequest request) {
-        // JwtTokenProvider는 액세스/리프레시 토큰을 구분하지 않고 INVALID_CREDENTIALS를 던지므로
-        // 리프레시 컨텍스트(만료·위조·형식 오류)에서는 INVALID_REFRESH_TOKEN으로 재매핑
-        var auth = parseRefreshToken(request.refreshToken());
-        Long userId = (Long) auth.getPrincipal();
+        // 리프레시 컨텍스트(만료·위조·형식 오류·용도 불일치)에서는 INVALID_REFRESH_TOKEN으로 재매핑
+        Long userId = parseRefreshToken(request.refreshToken());
 
         String stored = refreshTokenStore.find(userId)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
@@ -87,7 +84,8 @@ public class AuthService {
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        String role = auth.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
+        // role은 토큰 클레임이 아닌 DB 기준 — 역할 변경이 다음 갱신부터 즉시 반영
+        String role = user.getRole().name();
         String newAccess = jwtTokenProvider.createAccessToken(userId, role);
         String newRefresh = jwtTokenProvider.createRefreshToken(userId, role);
 
@@ -100,9 +98,9 @@ public class AuthService {
         refreshTokenStore.delete(userId);
     }
 
-    private Authentication parseRefreshToken(String token) {
+    private Long parseRefreshToken(String token) {
         try {
-            return jwtTokenProvider.getAuthentication(token);
+            return jwtTokenProvider.getRefreshTokenUserId(token);
         } catch (BusinessException e) {
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
