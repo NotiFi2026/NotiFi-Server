@@ -14,11 +14,11 @@ import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.entity.ResolutionType;
 import com.notifi.server.domain.escalation.entity.StepStatus;
 import com.notifi.server.domain.escalation.entity.StepType;
+import com.notifi.server.domain.escalation.event.GuardianNotifyRequestedEvent;
 import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
-import com.notifi.server.domain.notification.service.NotificationService;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
 import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
@@ -44,7 +44,6 @@ public class EscalationService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final SensingEventRepository sensingEventRepository;
     private final CareTargetRepository careTargetRepository;
-    private final NotificationService notificationService;
     private final CareTargetAccessValidator accessValidator;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -89,10 +88,11 @@ public class EscalationService {
         }
 
         // 신규 GUARDIAN_NOTIFY 단계일 때만 FCM 발송 (재시도 시 중복 발송 방지)
+        // 커밋 이후(AFTER_COMMIT 리스너) 실행 — 유령 푸시 방지 + 행 잠금 밖에서 네트워크 호출
         if (isNew && req.stepType() == StepType.GUARDIAN_NOTIFY && req.guardianMessage() != null) {
             Long careTargetId = resolveCareTargetId(escalation);
-            notificationService.dispatchGuardianNotify(
-                    step.getId(), escalationId, careTargetId, req.guardianMessage());
+            eventPublisher.publishEvent(new GuardianNotifyRequestedEvent(
+                    step.getId(), escalationId, careTargetId, req.guardianMessage()));
         }
 
         // 신규 VOICE_CHECK 진행 단계면 노인 앱으로 음성확인 푸시 (사후 기록 SKIPPED 등은 제외)

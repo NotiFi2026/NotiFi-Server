@@ -4,6 +4,7 @@ import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest.GuardianMessage;
+import com.notifi.server.domain.escalation.event.GuardianNotifyRequestedEvent;
 import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.notification.entity.Notification;
 import com.notifi.server.domain.notification.entity.NotificationCategory;
@@ -38,13 +39,19 @@ public class NotificationService {
     private final FcmSender fcmSender;
 
     /**
-     * GUARDIAN_NOTIFY 단계 수신 시 호출.
+     * 신규 GUARDIAN_NOTIFY 단계 커밋 이후 실행.
      * careTargetId에 연결된 모든 보호자에게 FCM 푸시 발송 + tb_notification 기록.
      * data 페이로드로 앱이 알림 탭 시 응급 화면(escalation_id)으로 딥링크한다.
+     * AFTER_COMMIT 발송 — 롤백 시 유령 푸시 방지 + 에스컬레이션 행 잠금 밖에서 네트워크 호출.
      */
-    @Transactional
-    public void dispatchGuardianNotify(Long escalationStepId, Long escalationId, Long careTargetId,
-                                       GuardianMessage guardianMessage) {
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void dispatchGuardianNotify(GuardianNotifyRequestedEvent event) {
+        Long escalationStepId = event.escalationStepId();
+        Long escalationId = event.escalationId();
+        Long careTargetId = event.careTargetId();
+        GuardianMessage guardianMessage = event.guardianMessage();
+
         List<Long> guardianUserIds = careRelationshipRepository
                 .findGuardiansByCareTargetId(careTargetId)
                 .stream()
