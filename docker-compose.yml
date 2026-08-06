@@ -39,6 +39,11 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-notifi}
       REDIS_HOST: redis
+      # .env 의 FIREBASE_CREDENTIALS_PATH 는 호스트 경로라 컨테이너에선 무효 — 마운트 경로로 덮어씀
+      FIREBASE_CREDENTIALS_PATH: /run/secrets/firebase.json
+    volumes:
+      # FIREBASE_KEY_FILE: 호스트의 서비스 계정 키 경로 (미설정 시 compose 파일 옆 ./secrets/firebase.json)
+      - ${FIREBASE_KEY_FILE:-./secrets/firebase.json}:/run/secrets/firebase.json:ro
     ports:
       - "8080:8080"
     depends_on:

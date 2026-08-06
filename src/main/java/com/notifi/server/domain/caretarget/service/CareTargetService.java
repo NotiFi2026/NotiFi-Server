@@ -11,6 +11,11 @@ import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.sensing.entity.RiskAssessment;
+import com.notifi.server.domain.sensing.entity.RiskLevel;
+import com.notifi.server.domain.sensing.entity.SensingEvent;
+import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
+import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -25,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +40,8 @@ public class CareTargetService {
     private final CareRelationshipRepository careRelationshipRepository;
     private final UserRepository userRepository;
     private final DeviceRepository deviceRepository;
+    private final SensingEventRepository sensingEventRepository;
+    private final RiskAssessmentRepository riskAssessmentRepository;
     private final CareTargetAccessValidator accessValidator;
 
     @Transactional
@@ -74,8 +82,27 @@ public class CareTargetService {
                 .toList();
         Map<Long, Integer> countMap = deviceRepository.deviceCountMap(careTargetIds);
 
-        Page<CareTargetSummaryResponse> mapped = page.map(cr ->
-                CareTargetSummaryResponse.from(cr, countMap.getOrDefault(cr.getCareTarget().getId(), 0)));
+        // 노인별 최신 이벤트 → 위험도·마지막 이벤트 시각 (S1과 동일 기준, N+1 방지 일괄 조회)
+        Map<Long, SensingEvent> latestEventMap = careTargetIds.isEmpty()
+                ? Map.of()
+                : sensingEventRepository.findLatestPerCareTarget(careTargetIds).stream()
+                        .collect(Collectors.toMap(SensingEvent::getCareTargetId, e -> e));
+        Map<Long, RiskLevel> riskLevelMap = latestEventMap.isEmpty()
+                ? Map.of()
+                : riskAssessmentRepository
+                        .findBySensingEventIdIn(latestEventMap.values().stream().map(SensingEvent::getId).toList())
+                        .stream()
+                        .collect(Collectors.toMap(RiskAssessment::getSensingEventId, RiskAssessment::getRiskLevel));
+
+        Page<CareTargetSummaryResponse> mapped = page.map(cr -> {
+            Long ctId = cr.getCareTarget().getId();
+            SensingEvent latest = latestEventMap.get(ctId);
+            return CareTargetSummaryResponse.from(
+                    cr,
+                    countMap.getOrDefault(ctId, 0),
+                    latest == null ? null : riskLevelMap.get(latest.getId()),
+                    latest == null ? null : latest.getDetectedAt());
+        });
         return PageResponse.from(mapped);
     }
 

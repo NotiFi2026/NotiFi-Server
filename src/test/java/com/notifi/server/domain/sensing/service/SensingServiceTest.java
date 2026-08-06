@@ -19,7 +19,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.hibernate.exception.ConstraintViolationException;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
@@ -97,6 +99,35 @@ class SensingServiceTest {
         assertThat(res.escalationTriggered()).isFalse();
         assertThat(res.escalationId()).isNull();
         then(escalationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ingest: 동시 중복 경합(유니크 위반) → SENSING_EVENT_ALREADY_EXISTS 409")
+    void ingest_concurrentDuplicate_conflict() {
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willThrow(new DataIntegrityViolationException("dup",
+                new ConstraintViolationException("dup", null, "uq_sensing_event_identity")));
+
+        assertThatThrownBy(() -> sensingService.ingest(dangerRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(SensingErrorCode.SENSING_EVENT_ALREADY_EXISTS);
+        then(riskAssessmentRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ingest: 유니크 외 제약 위반(FK 등)은 409로 오보고하지 않고 그대로 전파")
+    void ingest_otherConstraintViolation_rethrown() {
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willThrow(new DataIntegrityViolationException("fk",
+                new ConstraintViolationException("fk", null, "tb_sensing_event_device_id_fkey")));
+
+        assertThatThrownBy(() -> sensingService.ingest(dangerRequest()))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

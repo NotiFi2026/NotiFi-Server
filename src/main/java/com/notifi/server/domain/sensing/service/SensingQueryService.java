@@ -56,7 +56,7 @@ public class SensingQueryService {
         accessValidator.requireRelationshipOrSelf(userId, careTargetId);
 
         SensingEvent latest = sensingEventRepository
-                .findFirstByCareTargetIdOrderByDetectedAtDesc(careTargetId)
+                .findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(careTargetId)
                 .orElse(null);
 
         RiskLevel currentRiskLevel = null;

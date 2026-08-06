@@ -70,7 +70,7 @@ class SensingQueryServiceTest {
         SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 1L);
-        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
                 .willReturn(Optional.of(event));
 
         RiskAssessment ra = RiskAssessment.of(1L, (short) 80, RiskLevel.WARNING, null, "v0.1", DETECTED_AT);
@@ -95,7 +95,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 진행 중 에스컬레이션 있으면 active_escalation 요약 반환")
     void getStatus_withActiveEscalation_mapsSummary() {
-        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
                 .willReturn(Optional.empty());
         given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
 
@@ -121,7 +121,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 이벤트 없으면 currentRiskLevel·lastActivityAt null")
     void getStatus_noEvents_returnsNullRisk() {
-        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
                 .willReturn(Optional.empty());
         given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
 
@@ -135,7 +135,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getStatus: 본인·관계 검증 통과(노인 본인 포함) → requireRelationshipOrSelf 위임")
     void getStatus_selfAccess_delegatesToOrSelfGuard() {
-        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDesc(45L))
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
                 .willReturn(Optional.empty());
         given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
 

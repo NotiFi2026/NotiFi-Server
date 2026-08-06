@@ -7,6 +7,7 @@ import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.dto.EscalationStepRequest.GuardianMessage;
+import com.notifi.server.domain.escalation.event.GuardianNotifyRequestedEvent;
 import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.entity.Notification;
@@ -123,8 +124,8 @@ class NotificationServiceTest {
         ));
         given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
 
-        notificationService.dispatchGuardianNotify(101L, 10L, 45L,
-                new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", "전화 확인을 권장합니다."));
+        notificationService.dispatchGuardianNotify(new GuardianNotifyRequestedEvent(101L, 10L, 45L,
+                new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", "전화 확인을 권장합니다.")));
 
         Map<String, String> expectedData = Map.of(
                 "type", "GUARDIAN_NOTIFY",

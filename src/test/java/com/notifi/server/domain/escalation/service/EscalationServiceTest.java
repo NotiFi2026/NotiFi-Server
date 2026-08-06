@@ -11,11 +11,11 @@ import com.notifi.server.domain.escalation.dto.EscalationStepRequest;
 import com.notifi.server.domain.escalation.dto.EscalationStepResponse;
 import com.notifi.server.domain.escalation.dto.EscalationSummaryResponse;
 import com.notifi.server.domain.escalation.entity.*;
+import com.notifi.server.domain.escalation.event.GuardianNotifyRequestedEvent;
 import com.notifi.server.domain.escalation.event.VoiceCheckRequestedEvent;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
-import com.notifi.server.domain.notification.service.NotificationService;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
@@ -28,6 +28,7 @@ import com.notifi.server.global.response.PageResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -60,7 +61,6 @@ class EscalationServiceTest {
     @Mock RiskAssessmentRepository riskAssessmentRepository;
     @Mock SensingEventRepository sensingEventRepository;
     @Mock CareTargetRepository careTargetRepository;
-    @Mock NotificationService notificationService;
     @Mock CareTargetAccessValidator accessValidator;
     @Mock ApplicationEventPublisher eventPublisher;
 
@@ -96,7 +96,7 @@ class EscalationServiceTest {
         assertThat(res.stepType()).isEqualTo(StepType.VOICE_CHECK);
         then(eventPublisher).should().publishEvent(
                 new VoiceCheckRequestedEvent(100L, 10L, CARE_TARGET_ID));
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
+        then(eventPublisher).should(never()).publishEvent(any(GuardianNotifyRequestedEvent.class));
     }
 
     @Test
@@ -166,8 +166,14 @@ class EscalationServiceTest {
 
         escalationService.recordStep(10L, guardianNotifyRequest());
 
-        then(notificationService).should().dispatchGuardianNotify(
-                eq(101L), eq(10L), eq(99L), any(EscalationStepRequest.GuardianMessage.class));
+        ArgumentCaptor<GuardianNotifyRequestedEvent> captor =
+                ArgumentCaptor.forClass(GuardianNotifyRequestedEvent.class);
+        then(eventPublisher).should().publishEvent(captor.capture());
+        GuardianNotifyRequestedEvent published = captor.getValue();
+        assertThat(published.escalationStepId()).isEqualTo(101L);
+        assertThat(published.escalationId()).isEqualTo(10L);
+        assertThat(published.careTargetId()).isEqualTo(99L);
+        assertThat(published.guardianMessage()).isNotNull();
     }
 
     @Test
@@ -186,7 +192,7 @@ class EscalationServiceTest {
         escalationService.recordStep(10L, voiceCheckRequest());
 
         then(escalationStepRepository).should(never()).save(any());
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
+        then(eventPublisher).should(never()).publishEvent(any(GuardianNotifyRequestedEvent.class));
         then(eventPublisher).should(never()).publishEvent(any(VoiceCheckRequestedEvent.class));
         assertThat(existing.getStatus()).isEqualTo(StepStatus.EXECUTED);
     }
@@ -219,7 +225,7 @@ class EscalationServiceTest {
 
         escalationService.recordStep(10L, guardianNotifyRequest());
 
-        then(notificationService).should(never()).dispatchGuardianNotify(any(), any(), any(), any());
+        then(eventPublisher).should(never()).publishEvent(any(GuardianNotifyRequestedEvent.class));
     }
 
     @Test

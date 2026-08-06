@@ -18,6 +18,8 @@ import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,11 +49,21 @@ public class SensingService {
             return buildIdempotentResponse(existing.get());
         }
 
-        SensingEvent event = sensingEventRepository.save(SensingEvent.create(
-                req.careTargetId(), req.deviceId(), req.eventType(),
-                req.riskProbability(), req.anomalyScore(), req.trendScore(),
-                req.sensorStatus(), req.modelVersion(), req.features(), req.detectedAt()
-        ));
+        SensingEvent event;
+        try {
+            event = sensingEventRepository.save(SensingEvent.create(
+                    req.careTargetId(), req.deviceId(), req.eventType(),
+                    req.riskProbability(), req.anomalyScore(), req.trendScore(),
+                    req.sensorStatus(), req.modelVersion(), req.features(), req.detectedAt()
+            ));
+        } catch (DataIntegrityViolationException e) {
+            // 동시 중복 인제스트 경합만 409 — AI 서버 재시도 시 위 멱등 경로가 기존 결과를 응답.
+            // FK·CHECK 등 다른 제약 위반을 중복으로 오보고하지 않도록 제약명으로 한정한다.
+            if (isConstraintViolation(e, "uq_sensing_event_identity")) {
+                throw new BusinessException(SensingErrorCode.SENSING_EVENT_ALREADY_EXISTS);
+            }
+            throw e;
+        }
 
         RiskAssessment ra = riskAssessmentRepository.save(RiskAssessment.of(
                 event.getId(), req.riskScore(), req.riskLevel(),
@@ -77,17 +89,31 @@ public class SensingService {
             return new PoseClipIngestResponse(existing.get().getId(), sensingEventId);
         }
 
-        PoseClip clip = poseClipRepository.save(PoseClip.of(
-                sensingEventId, req.modelVersion(), req.jointSchema(),
-                req.fps().shortValue(), req.frameCount(), req.durationMs(),
-                req.windowStartAt(), req.windowEndAt(),
-                req.frames(), req.eventTimeline()
-        ));
+        PoseClip clip;
+        try {
+            clip = poseClipRepository.save(PoseClip.of(
+                    sensingEventId, req.modelVersion(), req.jointSchema(),
+                    req.fps().shortValue(), req.frameCount(), req.durationMs(),
+                    req.windowStartAt(), req.windowEndAt(),
+                    req.frames(), req.eventTimeline()
+            ));
+        } catch (DataIntegrityViolationException e) {
+            // 동시 중복 적재 경합만 409 — 다른 제약 위반은 그대로 전파
+            if (isConstraintViolation(e, "uq_pose_clip_event")) {
+                throw new BusinessException(SensingErrorCode.POSE_CLIP_ALREADY_EXISTS);
+            }
+            throw e;
+        }
         return new PoseClipIngestResponse(clip.getId(), sensingEventId);
     }
 
     private boolean shouldEscalate(RiskLevel level) {
         return level == RiskLevel.DANGER;
+    }
+
+    private static boolean isConstraintViolation(DataIntegrityViolationException e, String constraintName) {
+        return e.getCause() instanceof ConstraintViolationException cve
+                && constraintName.equalsIgnoreCase(cve.getConstraintName());
     }
 
     private SensingEventIngestResponse buildIdempotentResponse(SensingEvent event) {

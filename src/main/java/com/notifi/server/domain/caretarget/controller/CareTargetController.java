@@ -40,7 +40,7 @@ public class CareTargetController {
     }
 
     @Operation(summary = "[C2] 내가 보는 노인 목록",
-               description = "JWT 사용자가 보호자로 연결된 노인 목록을 반환한다. 위험도·디바이스 수 포함. Sensing·Device 도메인 구현 전까지 해당 필드는 null/0. (권한: 인증)")
+               description = "JWT 사용자가 보호자로 연결된 노인 목록을 반환한다. 노인별 최신 이벤트 기준 위험도(current_risk_level)·마지막 이벤트 시각(last_event_at)·디바이스 수 포함. 이벤트가 없으면 null. (권한: 인증)")
     @GetMapping
     public ApiResponse<PageResponse<CareTargetSummaryResponse>> getMyCareTargets(
             @AuthenticationPrincipal Long userId,

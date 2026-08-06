@@ -6,10 +6,13 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -57,6 +60,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<?>> handleNotReadable(HttpMessageNotReadableException e) {
         log.warn("[NotReadable] {}", e.getMessage());
         return ResponseEntity.badRequest().body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE));
+    }
+
+    /** 경로 변수·쿼리 파라미터 타입 불일치 (예: /escalations/abc, event_type=BOGUS) */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<?>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        log.warn("[TypeMismatch] {}", e.getName());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getName() + ": 형식이 올바르지 않습니다."));
+    }
+
+    /** 필수 쿼리 파라미터 누락 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<?>> handleMissingParameter(MissingServletRequestParameterException e) {
+        log.warn("[MissingParameter] {}", e.getParameterName());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getParameterName() + ": 필수 파라미터입니다."));
+    }
+
+    /** 지원하지 않는 Content-Type (415) */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<?>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        log.warn("[MediaTypeNotSupported] {}", e.getContentType());
+        return ResponseEntity.status(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE.getStatus())
+                .body(ApiResponse.error(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE));
     }
 
     /** 지원하지 않는 HTTP 메서드 */

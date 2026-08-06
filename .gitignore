@@ -42,3 +42,6 @@ CLAUDE.md
 ### Env ###
 .env
 !.env.example
+
+### Secrets (Firebase 서비스 계정 키 등) ###
+secrets/

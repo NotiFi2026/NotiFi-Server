@@ -36,6 +36,8 @@ public enum CommonErrorCode implements ErrorCode {
             "INVALID_INPUT_VALUE", "입력값이 올바르지 않습니다."),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED,
             "METHOD_NOT_ALLOWED", "지원하지 않는 HTTP 메서드입니다."),
+    UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+            "UNSUPPORTED_MEDIA_TYPE", "지원하지 않는 Content-Type입니다."),
 
     // ── 서버 ─────────────────────────────────────────
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR,
