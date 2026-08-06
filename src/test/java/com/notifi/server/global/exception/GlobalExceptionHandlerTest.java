@@ -8,10 +8,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +55,10 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/required-param")
         void requiredParam(@RequestParam("date") String date) {
         }
+
+        @PostMapping(value = "/test/json-only", consumes = "application/json")
+        void jsonOnly() {
+        }
     }
 
     // ── 테스트 ───────────────────────────────────────────────────────────────
@@ -92,5 +98,14 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("INVALID_INPUT_VALUE"));
+    }
+
+    @Test
+    @DisplayName("미지원 Content-Type → 415 UNSUPPORTED_MEDIA_TYPE (status·code 일치)")
+    void mediaTypeNotSupported_returns415() throws Exception {
+        mockMvc.perform(post("/test/json-only").contentType("text/plain").content("x"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("UNSUPPORTED_MEDIA_TYPE"));
     }
 }

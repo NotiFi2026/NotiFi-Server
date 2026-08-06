@@ -4,7 +4,6 @@ import com.notifi.server.global.response.ApiResponse;
 import com.notifi.server.global.exception.CommonErrorCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -66,9 +65,9 @@ public class GlobalExceptionHandler {
     /** 경로 변수·쿼리 파라미터 타입 불일치 (예: /escalations/abc, event_type=BOGUS) */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiResponse<?>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
-        log.warn("[TypeMismatch] {}={}", e.getName(), e.getValue());
+        log.warn("[TypeMismatch] {}", e.getName());
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getName() + ": 형식이 올바르지 않습니다"));
+                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getName() + ": 형식이 올바르지 않습니다."));
     }
 
     /** 필수 쿼리 파라미터 누락 */
@@ -76,15 +75,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<?>> handleMissingParameter(MissingServletRequestParameterException e) {
         log.warn("[MissingParameter] {}", e.getParameterName());
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getParameterName() + ": 필수 파라미터입니다"));
+                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, e.getParameterName() + ": 필수 파라미터입니다."));
     }
 
     /** 지원하지 않는 Content-Type (415) */
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ApiResponse<?>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
         log.warn("[MediaTypeNotSupported] {}", e.getContentType());
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                .body(ApiResponse.error(CommonErrorCode.INVALID_INPUT_VALUE, "지원하지 않는 Content-Type 입니다"));
+        return ResponseEntity.status(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE.getStatus())
+                .body(ApiResponse.error(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE));
     }
 
     /** 지원하지 않는 HTTP 메서드 */
