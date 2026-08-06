@@ -20,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
@@ -63,7 +64,7 @@ class SensingServiceTest {
         given(careTargetRepository.existsById(1L)).willReturn(true);
         given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
                 1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
-        given(sensingEventRepository.save(any())).willReturn(event);
+        given(sensingEventRepository.saveAndFlush(any())).willReturn(event);
         given(riskAssessmentRepository.save(any())).willReturn(ra);
         given(escalationRepository.save(any())).willReturn(escalation);
 
@@ -89,7 +90,7 @@ class SensingServiceTest {
         given(careTargetRepository.existsById(1L)).willReturn(true);
         given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
                 1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
-        given(sensingEventRepository.save(any())).willReturn(event);
+        given(sensingEventRepository.saveAndFlush(any())).willReturn(event);
         given(riskAssessmentRepository.save(any())).willReturn(ra);
 
         SensingEventIngestResponse res = sensingService.ingest(warningRequest());
@@ -97,6 +98,22 @@ class SensingServiceTest {
         assertThat(res.escalationTriggered()).isFalse();
         assertThat(res.escalationId()).isNull();
         then(escalationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ingest: 동시 중복 경합(unique 위반) → DUPLICATE_SENSING_EVENT 409")
+    void ingest_concurrentDuplicate_conflict() {
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.saveAndFlush(any()))
+                .willThrow(new DataIntegrityViolationException("uq_sensing_event_identity"));
+
+        assertThatThrownBy(() -> sensingService.ingest(dangerRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(SensingErrorCode.DUPLICATE_SENSING_EVENT);
+        then(riskAssessmentRepository).should(never()).save(any());
     }
 
     @Test
@@ -110,7 +127,7 @@ class SensingServiceTest {
         given(careTargetRepository.existsById(1L)).willReturn(true);
         given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
                 1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
-        given(sensingEventRepository.save(any())).willReturn(event);
+        given(sensingEventRepository.saveAndFlush(any())).willReturn(event);
         given(riskAssessmentRepository.save(any())).willReturn(ra);
 
         SensingEventIngestResponse res = sensingService.ingest(safeRequest());
@@ -131,7 +148,7 @@ class SensingServiceTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(CareTargetErrorCode.CARE_TARGET_NOT_FOUND));
 
-        then(sensingEventRepository).should(never()).save(any());
+        then(sensingEventRepository).should(never()).saveAndFlush(any());
     }
 
     // ── 멱등: 동일 (careTargetId, detectedAt, eventType) 재요청 ──────────────
@@ -158,7 +175,7 @@ class SensingServiceTest {
         assertThat(res.riskAssessmentId()).isEqualTo(2L);
         assertThat(res.escalationTriggered()).isTrue();
         assertThat(res.escalationId()).isEqualTo(3L);
-        then(sensingEventRepository).should(never()).save(any());
+        then(sensingEventRepository).should(never()).saveAndFlush(any());
         then(riskAssessmentRepository).should(never()).save(any());
         then(escalationRepository).should(never()).save(any());
     }
@@ -173,7 +190,7 @@ class SensingServiceTest {
 
         given(sensingEventRepository.existsById(1L)).willReturn(true);
         given(poseClipRepository.findBySensingEventId(1L)).willReturn(Optional.empty());
-        given(poseClipRepository.save(any())).willReturn(clip);
+        given(poseClipRepository.saveAndFlush(any())).willReturn(clip);
 
         PoseClipIngestResponse res = sensingService.ingestPoseClip(1L, poseClipRequest());
 
@@ -181,7 +198,7 @@ class SensingServiceTest {
         assertThat(res.sensingEventId()).isEqualTo(1L);
 
         ArgumentCaptor<PoseClip> captor = ArgumentCaptor.forClass(PoseClip.class);
-        then(poseClipRepository).should().save(captor.capture());
+        then(poseClipRepository).should().saveAndFlush(captor.capture());
         PoseClip saved = captor.getValue();
         assertThat(saved.getFps()).isEqualTo((short) 10);
         assertThat(saved.getFrameCount()).isEqualTo(300);
@@ -202,7 +219,7 @@ class SensingServiceTest {
 
         assertThat(res.poseClipId()).isEqualTo(10L);
         assertThat(res.sensingEventId()).isEqualTo(1L);
-        then(poseClipRepository).should(never()).save(any());
+        then(poseClipRepository).should(never()).saveAndFlush(any());
     }
 
     @Test
@@ -215,7 +232,7 @@ class SensingServiceTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
 
-        then(poseClipRepository).should(never()).save(any());
+        then(poseClipRepository).should(never()).saveAndFlush(any());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

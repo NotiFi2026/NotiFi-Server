@@ -18,6 +18,7 @@ import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,11 +48,17 @@ public class SensingService {
             return buildIdempotentResponse(existing.get());
         }
 
-        SensingEvent event = sensingEventRepository.save(SensingEvent.create(
-                req.careTargetId(), req.deviceId(), req.eventType(),
-                req.riskProbability(), req.anomalyScore(), req.trendScore(),
-                req.sensorStatus(), req.modelVersion(), req.features(), req.detectedAt()
-        ));
+        SensingEvent event;
+        try {
+            event = sensingEventRepository.saveAndFlush(SensingEvent.create(
+                    req.careTargetId(), req.deviceId(), req.eventType(),
+                    req.riskProbability(), req.anomalyScore(), req.trendScore(),
+                    req.sensorStatus(), req.modelVersion(), req.features(), req.detectedAt()
+            ));
+        } catch (DataIntegrityViolationException e) {
+            // 동시 중복 인제스트 경합 — 409 반환, AI 서버 재시도 시 위 멱등 경로가 기존 결과를 응답
+            throw new BusinessException(SensingErrorCode.DUPLICATE_SENSING_EVENT);
+        }
 
         RiskAssessment ra = riskAssessmentRepository.save(RiskAssessment.of(
                 event.getId(), req.riskScore(), req.riskLevel(),
@@ -77,12 +84,17 @@ public class SensingService {
             return new PoseClipIngestResponse(existing.get().getId(), sensingEventId);
         }
 
-        PoseClip clip = poseClipRepository.save(PoseClip.of(
-                sensingEventId, req.modelVersion(), req.jointSchema(),
-                req.fps().shortValue(), req.frameCount(), req.durationMs(),
-                req.windowStartAt(), req.windowEndAt(),
-                req.frames(), req.eventTimeline()
-        ));
+        PoseClip clip;
+        try {
+            clip = poseClipRepository.saveAndFlush(PoseClip.of(
+                    sensingEventId, req.modelVersion(), req.jointSchema(),
+                    req.fps().shortValue(), req.frameCount(), req.durationMs(),
+                    req.windowStartAt(), req.windowEndAt(),
+                    req.frames(), req.eventTimeline()
+            ));
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(SensingErrorCode.DUPLICATE_POSE_CLIP);
+        }
         return new PoseClipIngestResponse(clip.getId(), sensingEventId);
     }
 
