@@ -26,6 +26,9 @@ memory/
 .env.*
 !.env.example
 
+# Secrets (Firebase 서비스 계정 키 등 — build context 전송 차단)
+secrets/
+
 # OS
 .DS_Store
 Thumbs.db
