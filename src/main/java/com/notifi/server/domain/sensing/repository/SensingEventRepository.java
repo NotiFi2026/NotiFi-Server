@@ -19,12 +19,13 @@ public interface SensingEventRepository extends JpaRepository<SensingEvent, Long
             Long careTargetId, Instant detectedAt, EventType eventType);
 
     // S1: 가장 최근 이벤트 1건 (위험도·last_activity_at 산출)
-    Optional<SensingEvent> findFirstByCareTargetIdOrderByDetectedAtDesc(Long careTargetId);
+    // 같은 detected_at 동률(다른 event_type) 시 id 보조 정렬로 C2(findLatestPerCareTarget)와 동일 행 선택 보장
+    Optional<SensingEvent> findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(Long careTargetId);
 
     // C2: 노인별 최신 이벤트 일괄 조회 (N+1 방지, Postgres DISTINCT ON)
     @Query(value = "SELECT DISTINCT ON (care_target_id) * FROM tb_sensing_event " +
                    "WHERE care_target_id IN (:careTargetIds) " +
-                   "ORDER BY care_target_id, detected_at DESC",
+                   "ORDER BY care_target_id, detected_at DESC, sensing_event_id DESC",
            nativeQuery = true)
     List<SensingEvent> findLatestPerCareTarget(@Param("careTargetIds") Collection<Long> careTargetIds);
 
