@@ -29,6 +29,11 @@ import java.util.List;
 @Component
 public class JwtTokenProvider {
 
+    /** 토큰 용도 클레임 — 리프레시 토큰이 액세스 토큰으로 통용되는 것을 차단 */
+    private static final String CLAIM_TYPE = "typ";
+    private static final String TYPE_ACCESS = "access";
+    private static final String TYPE_REFRESH = "refresh";
+
     private final SecretKey signingKey;
     private final long accessTtl;    // seconds
     private final long refreshTtl;   // seconds
@@ -42,11 +47,6 @@ public class JwtTokenProvider {
         this.accessTtl = accessTtl;
         this.refreshTtl = refreshTtl;
     }
-
-    /** 토큰 용도 클레임 — 리프레시 토큰이 액세스 토큰으로 통용되는 것을 차단 */
-    private static final String CLAIM_TYPE = "typ";
-    private static final String TYPE_ACCESS = "access";
-    private static final String TYPE_REFRESH = "refresh";
 
     public String createAccessToken(Long userId, String role) {
         return buildToken(userId, role, accessTtl, TYPE_ACCESS);
@@ -95,7 +95,9 @@ public class JwtTokenProvider {
     }
 
     private void requireType(Claims claims, String expected) {
-        if (!expected.equals(claims.get(CLAIM_TYPE, String.class))) {
+        String actual = claims.get(CLAIM_TYPE, String.class);
+        if (!expected.equals(actual)) {
+            log.debug("[JWT] 토큰 용도 불일치: expected={}, actual={}", expected, actual);
             throw new BusinessException(CommonErrorCode.INVALID_CREDENTIALS);
         }
     }

@@ -28,6 +28,7 @@ import com.notifi.server.global.response.PageResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -165,7 +166,14 @@ class EscalationServiceTest {
 
         escalationService.recordStep(10L, guardianNotifyRequest());
 
-        then(eventPublisher).should().publishEvent(any(GuardianNotifyRequestedEvent.class));
+        ArgumentCaptor<GuardianNotifyRequestedEvent> captor =
+                ArgumentCaptor.forClass(GuardianNotifyRequestedEvent.class);
+        then(eventPublisher).should().publishEvent(captor.capture());
+        GuardianNotifyRequestedEvent published = captor.getValue();
+        assertThat(published.escalationStepId()).isEqualTo(101L);
+        assertThat(published.escalationId()).isEqualTo(10L);
+        assertThat(published.careTargetId()).isEqualTo(99L);
+        assertThat(published.guardianMessage()).isNotNull();
     }
 
     @Test
