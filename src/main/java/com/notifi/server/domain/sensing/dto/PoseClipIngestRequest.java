@@ -27,6 +27,7 @@ public record PoseClipIngestRequest(
         @Min(0)
         Integer frameCount,
 
+        @Min(0)
         Integer durationMs,
 
         @NotNull
