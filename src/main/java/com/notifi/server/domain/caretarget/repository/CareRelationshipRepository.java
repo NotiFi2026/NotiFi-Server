@@ -23,6 +23,7 @@ public interface CareRelationshipRepository extends JpaRepository<CareRelationsh
     @Query("SELECT CASE WHEN COUNT(cr) > 0 THEN TRUE ELSE FALSE END FROM CareRelationship cr JOIN cr.careTarget ct WHERE cr.userId = :userId AND ct.id = :careTargetId")
     boolean existsByUserIdAndCareTargetId(@Param("userId") Long userId, @Param("careTargetId") Long careTargetId);
 
-    @Query("SELECT cr FROM CareRelationship cr WHERE cr.careTarget.id = :careTargetId ORDER BY cr.notifyPriority ASC, cr.id ASC")
+    // careTarget 조인으로 soft delete 적용 — 삭제된 노인에겐 보호자 알림이 나가지 않는다
+    @Query("SELECT cr FROM CareRelationship cr JOIN cr.careTarget ct WHERE ct.id = :careTargetId ORDER BY cr.notifyPriority ASC, cr.id ASC")
     List<CareRelationship> findGuardiansByCareTargetId(@Param("careTargetId") Long careTargetId);
 }
