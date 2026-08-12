@@ -18,13 +18,18 @@ import com.notifi.server.domain.sensing.repository.RiskAssessmentRepository;
 import com.notifi.server.domain.sensing.repository.SensingEventRepository;
 import com.notifi.server.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Objects;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SensingService {
@@ -41,20 +46,34 @@ public class SensingService {
             throw new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND);
         }
 
+        // 계약: detected_at은 ms 정밀도(추론 윈도 종료시각) — 멱등키 비교·저장 정밀도를 ms로 통일
+        Instant detectedAt = req.detectedAt().truncatedTo(ChronoUnit.MILLIS);
+
         Optional<SensingEvent> existing = sensingEventRepository
                 .findByCareTargetIdAndDetectedAtAndEventType(
-                        req.careTargetId(), req.detectedAt(), req.eventType());
+                        req.careTargetId(), detectedAt, req.eventType());
 
         if (existing.isPresent()) {
+            if (!Objects.equals(existing.get().getActivityClass(), req.activityClass())) {
+                // 재시도는 동일 payload가 계약 — 불일치는 AI측 버그 신호이므로 기록만 남긴다
+                log.warn("[I1] 멱등 재시도 activity_class 불일치: sensingEventId={}, 기존={}, 요청={}",
+                        existing.get().getId(), existing.get().getActivityClass(), req.activityClass());
+            }
             return buildIdempotentResponse(existing.get());
+        }
+
+        if (req.activityClass() != null && req.activityClass().expectedEventType() != req.eventType()) {
+            // 조합 검증으로 거부하지 않는다 — 선택 필드가 응급 이벤트 적재를 막으면 안 됨. AI측 버그 신호로 관측만.
+            log.warn("[I1] event_type·activity_class 불일치: eventType={}, activityClass={} (기대 event_type={})",
+                    req.eventType(), req.activityClass(), req.activityClass().expectedEventType());
         }
 
         SensingEvent event;
         try {
             event = sensingEventRepository.save(SensingEvent.create(
-                    req.careTargetId(), req.deviceId(), req.eventType(),
+                    req.careTargetId(), req.deviceId(), req.eventType(), req.activityClass(),
                     req.riskProbability(), req.anomalyScore(), req.trendScore(),
-                    req.sensorStatus(), req.modelVersion(), req.features(), req.detectedAt()
+                    req.sensorStatus(), req.modelVersion(), req.features(), detectedAt
             ));
         } catch (DataIntegrityViolationException e) {
             // 동시 중복 인제스트 경합만 409 — AI 서버 재시도 시 위 멱등 경로가 기존 결과를 응답.
@@ -67,7 +86,7 @@ public class SensingService {
 
         RiskAssessment ra = riskAssessmentRepository.save(RiskAssessment.of(
                 event.getId(), req.riskScore(), req.riskLevel(),
-                req.scoreBreakdown(), req.modelVersion(), req.detectedAt()
+                req.scoreBreakdown(), req.modelVersion(), detectedAt
         ));
 
         if (shouldEscalate(req.riskLevel())) {

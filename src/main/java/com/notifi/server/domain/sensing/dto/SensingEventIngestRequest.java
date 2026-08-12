@@ -1,5 +1,6 @@
 package com.notifi.server.domain.sensing.dto;
 
+import com.notifi.server.domain.sensing.entity.ActivityClass;
 import com.notifi.server.domain.sensing.entity.EventType;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensorStatus;
@@ -19,6 +20,7 @@ public record SensingEventIngestRequest(
         @NotNull Long careTargetId,
         Long deviceId,
         @NotNull EventType eventType,
+        ActivityClass activityClass,
         @Digits(integer = 1, fraction = 3) @DecimalMin("0") @DecimalMax("1") BigDecimal riskProbability,
         @Digits(integer = 1, fraction = 3) @DecimalMin("0") @DecimalMax("1") BigDecimal anomalyScore,
         @Digits(integer = 1, fraction = 3) @DecimalMin("0") @DecimalMax("1") BigDecimal trendScore,

@@ -67,7 +67,7 @@ class SensingQueryServiceTest {
     @DisplayName("getStatus: 최신 이벤트·위험도·디바이스 매핑, todayMetrics·activeEscalation null")
     void getStatus_withLatestEvent_mapsFieldsCorrectly() {
 
-        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 1L);
         given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
@@ -171,10 +171,10 @@ class SensingQueryServiceTest {
     // ── S2: getEvents ─────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getEvents: 포즈클립 없는 이벤트 → has_replay=false")
+    @DisplayName("getEvents: 포즈클립 없는 이벤트 → has_replay=false, activity_class 매핑")
     void getEvents_withRiskAssessment_noClip_hasReplayFalse() {
 
-        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, ActivityClass.FALL_FROM_STANDING,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 1L);
         given(sensingEventRepository.findEvents(eq(45L), eq(EventType.FALL), any(), any(), any(Pageable.class)))
@@ -190,6 +190,7 @@ class SensingQueryServiceTest {
         assertThat(result.content()).hasSize(1);
         SensingEventSummaryResponse summary = result.content().get(0);
         assertThat(summary.sensingEventId()).isEqualTo(1L);
+        assertThat(summary.activityClass()).isEqualTo(ActivityClass.FALL_FROM_STANDING);
         assertThat(summary.riskScore()).isEqualTo((short) 85);
         assertThat(summary.riskLevel()).isEqualTo(RiskLevel.DANGER);
         assertThat(summary.hasReplay()).isFalse();
@@ -199,7 +200,7 @@ class SensingQueryServiceTest {
     @DisplayName("getEvents: 포즈클립 있는 이벤트 → has_replay=true")
     void getEvents_withPoseClip_hasReplayTrue() {
 
-        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 1L);
         given(sensingEventRepository.findEvents(eq(45L), eq(EventType.FALL), any(), any(), any(Pageable.class)))
@@ -219,7 +220,7 @@ class SensingQueryServiceTest {
     @DisplayName("getEvents: 위험도 없는 이벤트 → riskScore·riskLevel null, has_replay=false")
     void getEvents_noRiskAssessment_nullsRiskFields() {
 
-        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 2L);
         given(sensingEventRepository.findEvents(eq(45L), any(), any(), any(), any(Pageable.class)))
@@ -241,7 +242,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getPoseClip: 정상 → PoseClipResponse 반환·필드 매핑 일치")
     void getPoseClip_success_returnsResponse() {
-        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
@@ -283,7 +284,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getPoseClip: 관계 없고 노인 존재 → ACCESS_DENIED")
     void getPoseClip_noRelationship_accessDenied() {
-        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
@@ -299,7 +300,7 @@ class SensingQueryServiceTest {
     @Test
     @DisplayName("getPoseClip: 클립 없음(NORMAL 이벤트 등) → POSE_CLIP_NOT_FOUND")
     void getPoseClip_clipNotFound() {
-        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL,
+        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));

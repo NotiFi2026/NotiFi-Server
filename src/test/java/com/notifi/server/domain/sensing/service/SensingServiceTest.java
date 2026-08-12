@@ -150,6 +150,64 @@ class SensingServiceTest {
         then(escalationRepository).should(never()).save(any());
     }
 
+    // ── AI v1 계약: activity_class 저장 + detected_at ms 절삭 ─────────────────
+
+    @Test
+    @DisplayName("ingest: activity_class가 저장 엔티티에 반영되고 detected_at은 ms로 절삭된다")
+    void ingest_persistsActivityClass_andTruncatesDetectedAtToMillis() {
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+
+        Instant nanoPrecision = Instant.parse("2026-06-27T03:22:00.123456789Z");
+        Instant msPrecision = Instant.parse("2026-06-27T03:22:00.123Z");
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, msPrecision, EventType.NORMAL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+
+        sensingService.ingest(new SensingEventIngestRequest(
+                1L, null, EventType.NORMAL, ActivityClass.WALKING,
+                null, null, null, null,
+                "v0.1", null, nanoPrecision,
+                (short) 2, RiskLevel.SAFE, null
+        ));
+
+        ArgumentCaptor<SensingEvent> captor = ArgumentCaptor.forClass(SensingEvent.class);
+        then(sensingEventRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getActivityClass()).isEqualTo(ActivityClass.WALKING);
+        assertThat(captor.getValue().getDetectedAt()).isEqualTo(msPrecision);
+    }
+
+    @Test
+    @DisplayName("ingest: event_type·activity_class 모순 조합도 거부 없이 저장된다 (WARN 관측만)")
+    void ingest_mismatchedActivityClass_stillPersists() {
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.NORMAL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+
+        sensingService.ingest(new SensingEventIngestRequest(
+                1L, null, EventType.NORMAL, ActivityClass.FALL_FROM_STANDING,
+                null, null, null, null,
+                "v0.1", null, DETECTED_AT,
+                (short) 2, RiskLevel.SAFE, null
+        ));
+
+        ArgumentCaptor<SensingEvent> captor = ArgumentCaptor.forClass(SensingEvent.class);
+        then(sensingEventRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getActivityClass()).isEqualTo(ActivityClass.FALL_FROM_STANDING);
+    }
+
     // ── care_target 없음 → 예외 ───────────────────────────────────────────────
 
     @Test
@@ -265,7 +323,7 @@ class SensingServiceTest {
 
     private SensingEventIngestRequest requestFor(Long careTargetId, RiskLevel level) {
         return new SensingEventIngestRequest(
-                careTargetId, null, EventType.FALL,
+                careTargetId, null, EventType.FALL, null,
                 null, null, null, null,
                 "v0.1", null, DETECTED_AT,
                 (short) 85, level, null
@@ -273,7 +331,7 @@ class SensingServiceTest {
     }
 
     private SensingEvent sensingEvent() {
-        return SensingEvent.create(1L, null, EventType.FALL,
+        return SensingEvent.create(1L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, DETECTED_AT);
     }
 

@@ -170,7 +170,7 @@ class CareTargetServiceTest {
         CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
 
         java.time.Instant detectedAt = java.time.Instant.parse("2026-08-06T01:00:00Z");
-        SensingEvent latest = SensingEvent.create(45L, null, EventType.FALL,
+        SensingEvent latest = SensingEvent.create(45L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, detectedAt);
         ReflectionTestUtils.setField(latest, "id", 5L);
         RiskAssessment ra = RiskAssessment.of(5L, (short) 85, RiskLevel.DANGER, null, "v0.1", detectedAt);
