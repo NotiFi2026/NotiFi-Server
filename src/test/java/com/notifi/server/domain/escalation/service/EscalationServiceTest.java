@@ -378,6 +378,8 @@ class EscalationServiceTest {
         assertThat(res.careTargetId()).isEqualTo(CARE_TARGET_ID);
         assertThat(res.careTargetName()).isEqualTo("박순자");
         assertThat(res.eventType()).isEqualTo(EventType.FALL);
+        // 앱이 이 ID로 S3 포즈클립을 연다 — 빠지면 응급 상세에서 리플레이 진입이 불가능해진다
+        assertThat(res.sensingEventId()).isEqualTo(5L);
         assertThat(res.steps()).hasSize(2);
         assertThat(res.steps().get(0).stepType()).isEqualTo(StepType.VOICE_CHECK);
         assertThat(res.steps().get(1).stepType()).isEqualTo(StepType.GUARDIAN_NOTIFY);

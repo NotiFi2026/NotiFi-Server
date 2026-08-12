@@ -172,6 +172,7 @@ public class EscalationService {
                 .map(CareTarget::getName)
                 .orElse(null);
         return EscalationDetailResponse.of(
-                escalation, steps, event.getCareTargetId(), careTargetName, event.getEventType());
+                escalation, steps, event.getCareTargetId(), careTargetName,
+                event.getEventType(), event.getId());
     }
 }
