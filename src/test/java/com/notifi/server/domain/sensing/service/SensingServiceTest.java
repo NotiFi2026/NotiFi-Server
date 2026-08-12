@@ -182,6 +182,32 @@ class SensingServiceTest {
         assertThat(captor.getValue().getDetectedAt()).isEqualTo(msPrecision);
     }
 
+    @Test
+    @DisplayName("ingest: event_type·activity_class 모순 조합도 거부 없이 저장된다 (WARN 관측만)")
+    void ingest_mismatchedActivityClass_stillPersists() {
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.NORMAL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+
+        sensingService.ingest(new SensingEventIngestRequest(
+                1L, null, EventType.NORMAL, ActivityClass.FALL_FROM_STANDING,
+                null, null, null, null,
+                "v0.1", null, DETECTED_AT,
+                (short) 2, RiskLevel.SAFE, null
+        ));
+
+        ArgumentCaptor<SensingEvent> captor = ArgumentCaptor.forClass(SensingEvent.class);
+        then(sensingEventRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getActivityClass()).isEqualTo(ActivityClass.FALL_FROM_STANDING);
+    }
+
     // ── care_target 없음 → 예외 ───────────────────────────────────────────────
 
     @Test

@@ -62,6 +62,12 @@ public class SensingService {
             return buildIdempotentResponse(existing.get());
         }
 
+        if (req.activityClass() != null && req.activityClass().expectedEventType() != req.eventType()) {
+            // 조합 검증으로 거부하지 않는다 — 선택 필드가 응급 이벤트 적재를 막으면 안 됨. AI측 버그 신호로 관측만.
+            log.warn("[I1] event_type·activity_class 불일치: eventType={}, activityClass={} (기대 event_type={})",
+                    req.eventType(), req.activityClass(), req.activityClass().expectedEventType());
+        }
+
         SensingEvent event;
         try {
             event = sensingEventRepository.save(SensingEvent.create(

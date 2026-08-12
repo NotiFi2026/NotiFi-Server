@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,5 +41,32 @@ class ActivityClassTest {
         assertThat(ActivityClass.from("FLYING")).isNull();
         assertThat(ActivityClass.from(null)).isNull();
         assertThat(ActivityClass.from("  ")).isNull();
+    }
+
+    @Test
+    @DisplayName("관대 바인딩: 터키어 로케일에서도 i→İ 변환 없이 정상 매칭 (Locale.ROOT 회귀 가드)")
+    void from_turkishLocale_stillResolves() {
+        Locale original = Locale.getDefault();
+        try {
+            Locale.setDefault(new Locale("tr", "TR"));
+            assertThat(ActivityClass.from("sitting_still")).isEqualTo(ActivityClass.SITTING_STILL);
+            assertThat(ActivityClass.from("lying_still")).isEqualTo(ActivityClass.LYING_STILL);
+        } finally {
+            Locale.setDefault(original);
+        }
+    }
+
+    @Test
+    @DisplayName("expectedEventType: safe 9종→NORMAL, warning 3종→ANOMALY, danger 5종→FALL")
+    void expectedEventType_mapsCategories() {
+        assertThat(Arrays.stream(ActivityClass.values())
+                .filter(ac -> ac.expectedEventType() == EventType.NORMAL)).hasSize(9);
+        assertThat(Arrays.stream(ActivityClass.values())
+                .filter(ac -> ac.expectedEventType() == EventType.ANOMALY)).hasSize(3);
+        assertThat(Arrays.stream(ActivityClass.values())
+                .filter(ac -> ac.expectedEventType() == EventType.FALL)).hasSize(5);
+        assertThat(ActivityClass.WALKING.expectedEventType()).isEqualTo(EventType.NORMAL);
+        assertThat(ActivityClass.UNSTABLE_WALKING.expectedEventType()).isEqualTo(EventType.ANOMALY);
+        assertThat(ActivityClass.FALL_FROM_STANDING.expectedEventType()).isEqualTo(EventType.FALL);
     }
 }
