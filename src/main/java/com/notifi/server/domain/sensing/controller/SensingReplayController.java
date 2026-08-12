@@ -23,7 +23,9 @@ public class SensingReplayController {
     @Operation(
             summary = "[S3] 복원 스켈레톤 리플레이 조회",
             description = "감지 이벤트에 AI 서버가 복원·적재한 추상 스켈레톤 클립을 반환한다. " +
-                          "카메라 영상이 아닌 13-point 좌표 시퀀스(개인정보 없음). " +
+                          "카메라 영상이 아닌 SMPL-22 22관절 좌표 시퀀스(개인정보 없음). " +
+                          "frames는 joint_schema에 따른 원본 JSON 그대로 — smpl-22는 " +
+                          "joints·pose_rel[프레임][관절][xyz]·root·frame_valid를 담는다. " +
                           "클립 미존재(NORMAL 이벤트 등)는 404 반환. (권한: 관계)"
     )
     @GetMapping("/{sensingEventId}/pose-clip")

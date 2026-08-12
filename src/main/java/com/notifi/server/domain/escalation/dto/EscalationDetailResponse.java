@@ -20,11 +20,13 @@ public record EscalationDetailResponse(
         Long careTargetId,
         String careTargetName,
         EventType eventType,
+        /** 이 에스컬레이션을 유발한 감지 이벤트. 앱이 S3(포즈클립)로 리플레이를 여는 유일한 경로다. */
+        Long sensingEventId,
         List<EscalationStepResponse> steps
 ) {
     public static EscalationDetailResponse of(Escalation e, List<EscalationStep> steps,
                                               Long careTargetId, String careTargetName,
-                                              EventType eventType) {
+                                              EventType eventType, Long sensingEventId) {
         return new EscalationDetailResponse(
                 e.getId(),
                 e.getStatus(),
@@ -35,6 +37,7 @@ public record EscalationDetailResponse(
                 careTargetId,
                 careTargetName,
                 eventType,
+                sensingEventId,
                 steps.stream().map(s -> EscalationStepResponse.from(s, e.getStatus())).toList()
         );
     }
