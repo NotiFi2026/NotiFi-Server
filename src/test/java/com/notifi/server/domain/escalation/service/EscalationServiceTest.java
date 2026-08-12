@@ -153,7 +153,7 @@ class EscalationServiceTest {
         ReflectionTestUtils.setField(ra, "id", 1L);
         ReflectionTestUtils.setField(ra, "sensingEventId", 5L);
 
-        SensingEvent event = SensingEvent.create(99L, null, EventType.FALL,
+        SensingEvent event = SensingEvent.create(99L, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, EXECUTED_AT);
         ReflectionTestUtils.setField(event, "id", 5L);
 
@@ -536,7 +536,7 @@ class EscalationServiceTest {
     }
 
     private SensingEvent makeEvent(Long careTargetId) {
-        SensingEvent e = SensingEvent.create(careTargetId, null, EventType.FALL,
+        SensingEvent e = SensingEvent.create(careTargetId, null, EventType.FALL, null,
                 null, null, null, null, "v0.1", null, EXECUTED_AT);
         ReflectionTestUtils.setField(e, "id", 5L);
         return e;

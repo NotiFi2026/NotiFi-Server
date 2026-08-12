@@ -1,5 +1,6 @@
 package com.notifi.server.domain.sensing.dto;
 
+import com.notifi.server.domain.sensing.entity.ActivityClass;
 import com.notifi.server.domain.sensing.entity.EventType;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
@@ -11,6 +12,7 @@ import java.time.Instant;
 public record SensingEventSummaryResponse(
         Long sensingEventId,
         EventType eventType,
+        ActivityClass activityClass,
         BigDecimal riskProbability,
         Short riskScore,
         RiskLevel riskLevel,
@@ -21,6 +23,7 @@ public record SensingEventSummaryResponse(
         return new SensingEventSummaryResponse(
                 e.getId(),
                 e.getEventType(),
+                e.getActivityClass(),
                 e.getRiskProbability(),
                 ra != null ? ra.getRiskScore() : null,
                 ra != null ? ra.getRiskLevel() : null,

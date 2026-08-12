@@ -33,6 +33,10 @@ public class SensingEvent {
     @Column(name = "event_type", nullable = false, length = 30)
     private EventType eventType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "activity_class", length = 30)
+    private ActivityClass activityClass;
+
     @Column(name = "risk_probability", precision = 4, scale = 3)
     private BigDecimal riskProbability;
 
@@ -61,6 +65,7 @@ public class SensingEvent {
     private Instant createdAt;
 
     public static SensingEvent create(Long careTargetId, Long deviceId, EventType eventType,
+                                      ActivityClass activityClass,
                                       BigDecimal riskProbability, BigDecimal anomalyScore,
                                       BigDecimal trendScore, SensorStatus sensorStatus,
                                       String modelVersion, Map<String, Object> features,
@@ -69,6 +74,7 @@ public class SensingEvent {
         e.careTargetId = careTargetId;
         e.deviceId = deviceId;
         e.eventType = eventType;
+        e.activityClass = activityClass;
         e.riskProbability = riskProbability;
         e.anomalyScore = anomalyScore;
         e.trendScore = trendScore;

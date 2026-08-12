@@ -23,7 +23,7 @@ public class InternalSensingController {
 
     @Operation(
             summary = "[I1] 센싱 이벤트 적재",
-            description = "AI 서버가 판정한 감지 이벤트·위험도를 적재한다. risk_level=DANGER 시 에스컬레이션을 자동 생성하고 escalation_id를 반환한다. (care_target_id, detected_at, event_type) 기준 멱등 처리. (권한: X-Internal-Key)"
+            description = "AI 서버가 판정한 감지 이벤트·위험도를 적재한다. risk_level=DANGER 시 에스컬레이션을 자동 생성하고 escalation_id를 반환한다. (care_target_id, detected_at, event_type) 기준 멱등 처리 — detected_at은 추론 윈도 종료시각을 ms 정밀도로 보낸다. activity_class는 AI v1 17행동 세부 분류(선택). (권한: X-Internal-Key)"
     )
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
