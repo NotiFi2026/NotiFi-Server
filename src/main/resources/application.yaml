@@ -53,8 +53,12 @@ cors:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    # Swagger는 인증 없이 열린다(SecurityConfig 기본 체인). API 전체 구조가 공개되므로
+    # 배포 환경에선 기본 차단하고 필요할 때만 켠다 — prod 프로파일 블록 참고.
+    enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
     path: /swagger-ui.html
+    enabled: ${SWAGGER_ENABLED:true}
   packages-to-scan: com.notifi.server.domain
 
 logging:
@@ -62,3 +66,34 @@ logging:
     com.notifi: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] %logger{36} - %msg%n"
+
+# 치명 실패 알림 웹훅 (Discord·Slack 등). 미설정이면 비활성 — 로컬 개발이 막히지 않는다.
+alert:
+  webhook-url: ${ALERT_WEBHOOK_URL:}
+  environment: ${ALERT_ENVIRONMENT:local}
+
+---
+# ── prod 프로파일 ──────────────────────────────────────────────────────────
+# 로컬과 다른 것만 여기 둔다. 시크릿 검증은 ProdConfigGuard가 부팅 시 수행한다.
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+logging:
+  structured:
+    format:
+      # 사람이 읽는 평문 대신 ECS(Elastic Common Schema) JSON 한 줄로 출력한다.
+      # 수집기가 파싱할 수 있어야 하고, AI 서버도 JSON을 내므로 포맷을 맞춘다.
+      # traceId는 MDC에서 자동으로 실린다.
+      console: ecs
+    ecs:
+      service:
+        name: notifi-server
+
+springdoc:
+  api-docs:
+    # 배포 환경 기본은 차단. 켜려면 SWAGGER_ENABLED=true 를 명시한다.
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}

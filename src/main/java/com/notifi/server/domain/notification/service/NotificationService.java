@@ -14,6 +14,7 @@ import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.notification.repository.NotificationRepository;
 import com.notifi.server.domain.report.event.DailyReportSavedEvent;
+import com.notifi.server.global.alert.AlertNotifier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,7 @@ public class NotificationService {
     private final FcmTokenRepository fcmTokenRepository;
     private final NotificationRepository notificationRepository;
     private final FcmSender fcmSender;
+    private final AlertNotifier alertNotifier;
 
     /**
      * 신규 GUARDIAN_NOTIFY 단계 커밋 이후 실행.
@@ -205,9 +207,37 @@ public class NotificationService {
             notification.markFailed();
             log.warn("[FCM] userId={} FCM 발송 실패 (토큰 {}개 중 전부 실패 또는 미등록)",
                     notification.getRecipientUserId(), tokens.size());
+            alertOnEmergencyDeliveryFailure(notification, tokens.size());
         }
 
         notificationRepository.save(notification);
+    }
+
+    /**
+     * 응급 알림이 한 대도 도달하지 못했으면 사람에게 알린다.
+     *
+     * <p>낙상이 감지되고 에스컬레이션까지 돌았는데 보호자 폰이 울리지 않은 상황이다.
+     * 로그 WARN 한 줄로 두면 아무도 모른 채 지나간다.
+     *
+     * <p>두 가지로 좁힌다 — 넓히면 알림이 노이즈가 되어 정작 볼 때 안 본다.
+     * <ul>
+     *   <li><b>EMERGENCY만</b>: 일일 리포트가 못 간 건 다음 날 보면 된다
+     *   <li><b>토큰이 있었는데 전부 실패한 경우만</b>: 토큰 미등록은 장애가 아니라
+     *       앱 설치·권한 문제이고, 데모·개발 환경에서 상시 발생한다
+     * </ul>
+     */
+    private void alertOnEmergencyDeliveryFailure(Notification notification, int tokenCount) {
+        if (notification.getCategory() != NotificationCategory.EMERGENCY || tokenCount == 0) {
+            return;
+        }
+        alertNotifier.critical(
+                "응급 알림이 보호자에게 도달하지 못했습니다 (FCM 발송 전량 실패)",
+                Map.of(
+                        "care_target_id", notification.getCareTargetId(),
+                        "recipient_user_id", notification.getRecipientUserId(),
+                        "token_count", tokenCount
+                )
+        );
     }
 
     private String buildBody(GuardianMessage msg) {

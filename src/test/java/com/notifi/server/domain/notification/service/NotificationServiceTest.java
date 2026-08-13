@@ -19,6 +19,7 @@ import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.notification.repository.NotificationRepository;
 import com.notifi.server.domain.report.event.DailyReportSavedEvent;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
+import com.notifi.server.global.alert.AlertNotifier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +52,7 @@ class NotificationServiceTest {
     @Mock FcmTokenRepository fcmTokenRepository;
     @Mock NotificationRepository notificationRepository;
     @Mock FcmSender fcmSender;
+    @Mock AlertNotifier alertNotifier;
 
     @InjectMocks NotificationService notificationService;
 
@@ -221,6 +223,59 @@ class NotificationServiceTest {
 
         then(fcmSender).shouldHaveNoInteractions();
         then(notificationRepository).should(never()).save(any());
+    }
+
+    // ── 치명 실패 알림 ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("응급 푸시가 토큰 전량 실패하면 사람에게 알린다 — 로그만 남기면 아무도 모른다")
+    void emergencyDeliveryFailure_notifiesOperator() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID)
+        ));
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(false);
+
+        notificationService.dispatchGuardianNotify(new GuardianNotifyRequestedEvent(101L, 10L, 45L,
+                new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", null)));
+
+        then(alertNotifier).should().critical(anyString(), anyMap());
+    }
+
+    @Test
+    @DisplayName("토큰 미등록은 알리지 않는다 — 장애가 아니라 앱 설치·권한 문제다")
+    void noRegisteredToken_doesNotNotifyOperator() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of());
+
+        notificationService.dispatchGuardianNotify(new GuardianNotifyRequestedEvent(101L, 10L, 45L,
+                new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", null)));
+
+        then(alertNotifier).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("리포트 알림 실패는 알리지 않는다 — 알림이 노이즈가 되면 정작 볼 때 안 본다")
+    void dailyReportDeliveryFailure_doesNotNotifyOperator() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID)
+        ));
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(false);
+
+        notificationService.dispatchDailyReport(new DailyReportSavedEvent(
+                210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.SAFE, "제목"));
+
+        then(alertNotifier).shouldHaveNoInteractions();
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
