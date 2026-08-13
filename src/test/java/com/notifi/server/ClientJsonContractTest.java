@@ -2,6 +2,9 @@ package com.notifi.server;
 
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.report.dto.DailyMetricsResponse;
+import com.notifi.server.domain.report.dto.DailyReportDetailResponse;
+import com.notifi.server.domain.report.dto.DailyReportSummaryResponse;
 import com.notifi.server.domain.sensing.dto.PoseClipResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
 import com.notifi.server.domain.sensing.entity.ActivityClass;
@@ -19,6 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -103,6 +108,67 @@ class ClientJsonContractTest {
 
         assertThat(node.has("sensing_event_id")).isTrue();
         assertThat(node.get("sensing_event_id").longValue()).isEqualTo(7003L);
+    }
+
+    @Test
+    @DisplayName("P1 리포트 목록 — 리포트 탭 카드가 읽는 필드")
+    void dailyReportSummaryFieldNames() {
+        JsonNode node = json(new DailyReportSummaryResponse(
+                210L,
+                LocalDate.of(2026, 8, 12),
+                RiskLevel.WARNING,
+                "불안정한 보행이 있었어요",
+                Instant.parse("2026-08-13T00:10:00Z")
+        ));
+
+        assertThat(node.propertyNames()).containsExactlyInAnyOrder(
+                "daily_report_id", "report_date", "risk_level", "headline", "generated_at");
+        // report_date는 DATE — 앱이 날짜 문자열로 파싱하므로 타임스탬프로 새면 안 된다
+        assertThat(node.get("report_date").stringValue()).isEqualTo("2026-08-12");
+    }
+
+    @Test
+    @DisplayName("P2 리포트 상세 — sections 안쪽 키는 AI가 보낸 그대로 통과해야 한다")
+    void dailyReportDetailFieldNames() {
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("tag", "risk_event");
+        section.put("risk_level", "WARNING");
+        section.put("title", "불안정한 보행이 있었어요");
+        section.put("body", "오후에 휘청이는 걸음이 세 번 감지됐어요.");
+        section.put("recommended_action", "미끄럼 방지 매트를 확인해 주세요.");
+
+        JsonNode node = json(new DailyReportDetailResponse(
+                210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.WARNING,
+                List.of(section),
+                Map.of("warning_event_count", 3, "danger_event_count", 0,
+                       "activity_class_counts", Map.of("WALKING", 120)),
+                Instant.parse("2026-08-13T00:10:00Z")
+        ));
+
+        assertThat(node.propertyNames()).containsExactlyInAnyOrder(
+                "daily_report_id", "care_target_id", "report_date", "risk_level",
+                "sections", "metrics", "generated_at");
+        // sections는 자유 JSON이라 네이밍 전략이 닿지 않는다 — 키가 바뀌면 리포트 화면이 조용히 빈다
+        assertThat(node.get("sections").get(0).propertyNames()).containsExactlyInAnyOrder(
+                "tag", "risk_level", "title", "body", "recommended_action");
+        // 적재 시 대문자로 정규화된다 — 앱은 한 가지 표기만 처리하면 된다
+        assertThat(node.get("sections").get(0).get("risk_level").stringValue()).isEqualTo("WARNING");
+    }
+
+    @Test
+    @DisplayName("I6 일일 집계 — AI 리포트 생성기가 읽는 필드")
+    void dailyMetricsFieldNames() {
+        JsonNode node = json(new DailyMetricsResponse(
+                45L, LocalDate.of(2026, 8, 12), 3L, 1L,
+                Map.of("WALKING", 120L, "FALL_FROM_STANDING", 1L)
+        ));
+
+        assertThat(node.propertyNames()).containsExactlyInAnyOrder(
+                "care_target_id", "date", "warning_event_count", "danger_event_count",
+                "activity_class_counts");
+        // 키는 대문자 activity_class 그대로 — Spring이 저장한 표기와 같아야 대조가 된다
+        assertThat(node.get("activity_class_counts").propertyNames())
+                .containsExactlyInAnyOrder("WALKING", "FALL_FROM_STANDING");
     }
 
     @Test

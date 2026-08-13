@@ -12,6 +12,7 @@ import com.notifi.server.domain.notification.entity.NotificationChannel;
 import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.notification.repository.NotificationRepository;
+import com.notifi.server.domain.report.event.DailyReportSavedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,8 @@ public class NotificationService {
 
     private static final String VOICE_CHECK_TITLE = "안부 확인";
     private static final String VOICE_CHECK_BODY = "괜찮으신지 확인이 필요해요. 화면을 눌러 응답해 주세요.";
+    private static final String DAILY_REPORT_TITLE = "일일 리포트가 도착했어요";
+    private static final String DAILY_REPORT_FALLBACK_BODY = "어제 하루 요약을 확인해 보세요.";
 
     private final CareRelationshipRepository careRelationshipRepository;
     private final CareTargetRepository careTargetRepository;
@@ -120,6 +123,55 @@ public class NotificationService {
         );
 
         sendAndSave(notification, tokens, VOICE_CHECK_TITLE, VOICE_CHECK_BODY, data);
+    }
+
+    /**
+     * 신규 일일 리포트 적재 커밋 이후 실행 — 보호자 전원에게 리포트 도착을 알린다.
+     * 재적재(UPSERT 갱신)에서는 이벤트가 발행되지 않으므로 AI 재시도로 폰이 여러 번 울지 않는다.
+     * 에스컬레이션이 아니라 escalation_step_id는 null이다(tb_notification에서 nullable).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void dispatchDailyReport(DailyReportSavedEvent event) {
+        Long careTargetId = event.careTargetId();
+
+        List<Long> guardianUserIds = careRelationshipRepository
+                .findGuardiansByCareTargetId(careTargetId)
+                .stream()
+                .map(cr -> cr.getUserId())
+                .collect(Collectors.toList());
+
+        if (guardianUserIds.isEmpty()) {
+            log.warn("[FCM] careTargetId={} 에 연결된 보호자 없음 — 리포트 알림 건너뜀", careTargetId);
+            return;
+        }
+
+        Map<Long, List<FcmToken>> tokensByUser = fcmTokenRepository
+                .findByUserIdIn(guardianUserIds)
+                .stream()
+                .collect(Collectors.groupingBy(FcmToken::getUserId));
+
+        String title = DAILY_REPORT_TITLE;
+        String body = event.headline() != null && !event.headline().isBlank()
+                ? event.headline()
+                : DAILY_REPORT_FALLBACK_BODY;
+        Map<String, String> data = Map.of(
+                "type", "DAILY_REPORT",
+                "daily_report_id", String.valueOf(event.dailyReportId()),
+                "care_target_id", String.valueOf(careTargetId),
+                "report_date", String.valueOf(event.reportDate())
+        );
+
+        for (Long userId : guardianUserIds) {
+            Notification notification = Notification.create(
+                    null, userId, careTargetId,
+                    NotificationChannel.FCM_PUSH, NotificationCategory.DAILY_REPORT,
+                    title, body
+            );
+
+            List<FcmToken> tokens = tokensByUser.getOrDefault(userId, List.of());
+            sendAndSave(notification, tokens, title, body, data);
+        }
     }
 
     /**
