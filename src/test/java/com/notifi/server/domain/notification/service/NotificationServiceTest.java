@@ -17,6 +17,8 @@ import com.notifi.server.domain.notification.entity.NotificationStatus;
 import com.notifi.server.domain.notification.entity.Platform;
 import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.notification.repository.NotificationRepository;
+import com.notifi.server.domain.report.event.DailyReportSavedEvent;
+import com.notifi.server.domain.sensing.entity.RiskLevel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +41,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
@@ -71,7 +75,7 @@ class NotificationServiceTest {
                 FcmToken.create(9L, "token-1", Platform.ANDROID),
                 FcmToken.create(9L, "token-2", Platform.IOS)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
@@ -80,8 +84,11 @@ class NotificationServiceTest {
                 "escalation_id", "10",
                 "escalation_step_id", "100"
         );
-        then(fcmSender).should().send(eq("token-1"), anyString(), anyString(), eq(expectedData));
-        then(fcmSender).should().send(eq("token-2"), anyString(), anyString(), eq(expectedData));
+        // 음성확인은 응급이다 — 잠금화면·도즈에서도 즉시 떠야 한다
+        then(fcmSender).should().send(eq("token-1"), anyString(), anyString(), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
+        then(fcmSender).should().send(eq("token-2"), anyString(), anyString(), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());
@@ -101,7 +108,7 @@ class NotificationServiceTest {
         given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
                 FcmToken.create(9L, "token-1", Platform.ANDROID)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(false);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(false);
 
         notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
@@ -122,7 +129,7 @@ class NotificationServiceTest {
         given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
                 FcmToken.create(9L, "token-1", Platform.ANDROID)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchGuardianNotify(new GuardianNotifyRequestedEvent(101L, 10L, 45L,
                 new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", "전화 확인을 권장합니다.")));
@@ -134,11 +141,86 @@ class NotificationServiceTest {
                 "care_target_id", "45"
         );
         then(fcmSender).should().send(eq("token-1"), eq("낙상 의심"),
-                eq("낙상 가능성이 감지되었습니다. 전화 확인을 권장합니다."), eq(expectedData));
+                eq("낙상 가능성이 감지되었습니다. 전화 확인을 권장합니다."), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(NotificationStatus.SENT);
+    }
+
+    // ── dispatchDailyReport ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("dispatchDailyReport: 보호자 전원에게 일반 채널로 발송, escalation_step_id는 null")
+    void dispatchDailyReport_sendsToAllGuardians() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1),
+                CareRelationship.of(11L, ct, RelationshipType.FAMILY, false, (short) 2)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L, 11L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID),
+                FcmToken.create(11L, "token-2", Platform.IOS)
+        ));
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
+
+        notificationService.dispatchDailyReport(new DailyReportSavedEvent(
+                210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.WARNING, "불안정한 보행이 있었어요"));
+
+        Map<String, String> expectedData = Map.of(
+                "type", "DAILY_REPORT",
+                "daily_report_id", "210",
+                "care_target_id", "45",
+                "report_date", "2026-08-12"
+        );
+        // 매일 오는 알림을 응급 채널로 보내면 보호자가 응급 채널을 꺼서 진짜 낙상까지 놓친다
+        then(fcmSender).should().send(eq("token-1"), eq("일일 리포트가 도착했어요"),
+                eq("불안정한 보행이 있었어요"), eq(expectedData), eq(FcmSender.Channel.NORMAL));
+        then(fcmSender).should().send(eq("token-2"), eq("일일 리포트가 도착했어요"),
+                eq("불안정한 보행이 있었어요"), eq(expectedData), eq(FcmSender.Channel.NORMAL));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        then(notificationRepository).should(times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(Notification::getRecipientUserId)
+                .containsExactly(9L, 11L);
+        Notification saved = captor.getAllValues().get(0);
+        assertThat(saved.getCategory()).isEqualTo(NotificationCategory.DAILY_REPORT);
+        // 에스컬레이션이 아니므로 단계 연결이 없다
+        assertThat(saved.getEscalationStepId()).isNull();
+        assertThat(saved.getStatus()).isEqualTo(NotificationStatus.SENT);
+    }
+
+    @Test
+    @DisplayName("dispatchDailyReport: headline이 비면 안내 문구로 대체한다 (빈 푸시 방지)")
+    void dispatchDailyReport_blankHeadline_usesFallbackBody() {
+        CareTarget ct = careTarget(45L, null);
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+        ));
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID)
+        ));
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
+
+        notificationService.dispatchDailyReport(new DailyReportSavedEvent(
+                210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.SAFE, null));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        then(notificationRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getBody()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("dispatchDailyReport: 연결된 보호자가 없으면 발송·저장 모두 건너뜀")
+    void dispatchDailyReport_noGuardians_skips() {
+        given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of());
+
+        notificationService.dispatchDailyReport(new DailyReportSavedEvent(
+                210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.SAFE, "제목"));
+
+        then(fcmSender).shouldHaveNoInteractions();
+        then(notificationRepository).should(never()).save(any());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────

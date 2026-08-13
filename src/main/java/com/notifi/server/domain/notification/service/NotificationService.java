@@ -1,5 +1,6 @@
 package com.notifi.server.domain.notification.service;
 
+import com.notifi.server.domain.caretarget.entity.CareRelationship;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
@@ -12,6 +13,7 @@ import com.notifi.server.domain.notification.entity.NotificationChannel;
 import com.notifi.server.domain.notification.entity.FcmToken;
 import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.notification.repository.NotificationRepository;
+import com.notifi.server.domain.report.event.DailyReportSavedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,6 +34,8 @@ public class NotificationService {
 
     private static final String VOICE_CHECK_TITLE = "안부 확인";
     private static final String VOICE_CHECK_BODY = "괜찮으신지 확인이 필요해요. 화면을 눌러 응답해 주세요.";
+    private static final String DAILY_REPORT_TITLE = "일일 리포트가 도착했어요";
+    private static final String DAILY_REPORT_FALLBACK_BODY = "어제 하루 요약을 확인해 보세요.";
 
     private final CareRelationshipRepository careRelationshipRepository;
     private final CareTargetRepository careTargetRepository;
@@ -52,21 +57,10 @@ public class NotificationService {
         Long careTargetId = event.careTargetId();
         GuardianMessage guardianMessage = event.guardianMessage();
 
-        List<Long> guardianUserIds = careRelationshipRepository
-                .findGuardiansByCareTargetId(careTargetId)
-                .stream()
-                .map(cr -> cr.getUserId())
-                .collect(Collectors.toList());
-
-        if (guardianUserIds.isEmpty()) {
-            log.warn("[FCM] careTargetId={} 에 연결된 보호자 없음 — 알림 발송 건너뜀", careTargetId);
+        Map<Long, List<FcmToken>> tokensByGuardian = resolveGuardianTokens(careTargetId, "알림 발송");
+        if (tokensByGuardian == null) {
             return;
         }
-
-        Map<Long, List<FcmToken>> tokensByUser = fcmTokenRepository
-                .findByUserIdIn(guardianUserIds)
-                .stream()
-                .collect(Collectors.groupingBy(FcmToken::getUserId));
 
         String body = buildBody(guardianMessage);
         Map<String, String> data = Map.of(
@@ -76,16 +70,47 @@ public class NotificationService {
                 "care_target_id", String.valueOf(careTargetId)
         );
 
-        for (Long userId : guardianUserIds) {
+        tokensByGuardian.forEach((userId, tokens) -> {
             Notification notification = Notification.create(
                     escalationStepId, userId, careTargetId,
                     NotificationChannel.FCM_PUSH, NotificationCategory.EMERGENCY,
                     guardianMessage.title(), body
             );
+            sendAndSave(notification, tokens, guardianMessage.title(), body, data,
+                    FcmSender.Channel.EMERGENCY);
+        });
+    }
 
-            List<FcmToken> tokens = tokensByUser.getOrDefault(userId, List.of());
-            sendAndSave(notification, tokens, guardianMessage.title(), body, data);
+    /**
+     * careTargetId에 연결된 보호자별 FCM 토큰. 보호자가 하나도 없으면 null을 반환한다.
+     *
+     * <p>{@code findGuardiansByCareTargetId}가 careTarget을 조인하므로 soft-deleted 노인은
+     * 여기서 걸러진다 — 삭제된 노인에 대해 알림이 나가지 않는 성질이 이 메서드에 걸려 있다.
+     * 반환 Map은 보호자 순서(notify_priority)를 유지한다.
+     */
+    private Map<Long, List<FcmToken>> resolveGuardianTokens(Long careTargetId, String context) {
+        List<Long> guardianUserIds = careRelationshipRepository
+                .findGuardiansByCareTargetId(careTargetId)
+                .stream()
+                .map(CareRelationship::getUserId)
+                .toList();
+
+        if (guardianUserIds.isEmpty()) {
+            log.warn("[FCM] careTargetId={} 에 연결된 보호자 없음 — {} 건너뜀", careTargetId, context);
+            return null;
         }
+
+        Map<Long, List<FcmToken>> tokensByUser = fcmTokenRepository
+                .findByUserIdIn(guardianUserIds)
+                .stream()
+                .collect(Collectors.groupingBy(FcmToken::getUserId));
+
+        // 토큰이 없는 보호자도 빠지면 안 된다 — 알림 기록(tb_notification)은 남겨야 한다
+        Map<Long, List<FcmToken>> ordered = new LinkedHashMap<>();
+        for (Long userId : guardianUserIds) {
+            ordered.put(userId, tokensByUser.getOrDefault(userId, List.of()));
+        }
+        return ordered;
     }
 
     /**
@@ -119,7 +144,45 @@ public class NotificationService {
                 VOICE_CHECK_TITLE, VOICE_CHECK_BODY
         );
 
-        sendAndSave(notification, tokens, VOICE_CHECK_TITLE, VOICE_CHECK_BODY, data);
+        sendAndSave(notification, tokens, VOICE_CHECK_TITLE, VOICE_CHECK_BODY, data,
+                FcmSender.Channel.EMERGENCY);
+    }
+
+    /**
+     * 신규 일일 리포트 적재 커밋 이후 실행 — 보호자 전원에게 리포트 도착을 알린다.
+     * 재적재(UPSERT 갱신)에서는 이벤트가 발행되지 않으므로 AI 재시도로 폰이 여러 번 울지 않는다.
+     * 에스컬레이션이 아니라 escalation_step_id는 null이다(tb_notification에서 nullable).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void dispatchDailyReport(DailyReportSavedEvent event) {
+        Long careTargetId = event.careTargetId();
+
+        Map<Long, List<FcmToken>> tokensByGuardian = resolveGuardianTokens(careTargetId, "리포트 알림");
+        if (tokensByGuardian == null) {
+            return;
+        }
+
+        String title = DAILY_REPORT_TITLE;
+        String body = event.headline() != null && !event.headline().isBlank()
+                ? event.headline()
+                : DAILY_REPORT_FALLBACK_BODY;
+        Map<String, String> data = Map.of(
+                "type", "DAILY_REPORT",
+                "daily_report_id", String.valueOf(event.dailyReportId()),
+                "care_target_id", String.valueOf(careTargetId),
+                "report_date", String.valueOf(event.reportDate())
+        );
+
+        tokensByGuardian.forEach((userId, tokens) -> {
+            Notification notification = Notification.create(
+                    null, userId, careTargetId,
+                    NotificationChannel.FCM_PUSH, NotificationCategory.DAILY_REPORT,
+                    title, body
+            );
+            // 응급이 아니다 — 매일 오는 알림을 응급 채널로 보내면 보호자가 응급 채널을 꺼버린다
+            sendAndSave(notification, tokens, title, body, data, FcmSender.Channel.NORMAL);
+        });
     }
 
     /**
@@ -127,10 +190,11 @@ public class NotificationService {
      * anyMatch 단락 방지 — 다기기 등록 시 모든 토큰에 발송한다.
      */
     private void sendAndSave(Notification notification, List<FcmToken> tokens,
-                             String title, String body, Map<String, String> data) {
+                             String title, String body, Map<String, String> data,
+                             FcmSender.Channel channel) {
         boolean anySent = false;
         for (FcmToken token : tokens) {
-            if (fcmSender.send(token.getToken(), title, body, data)) {
+            if (fcmSender.send(token.getToken(), title, body, data, channel)) {
                 anySent = true;
             }
         }

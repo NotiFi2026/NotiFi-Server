@@ -1,6 +1,8 @@
 package com.notifi.server.domain.sensing.repository;
 
+import com.notifi.server.domain.sensing.entity.ActivityClass;
 import com.notifi.server.domain.sensing.entity.EventType;
+import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -41,4 +43,35 @@ public interface SensingEventRepository extends JpaRepository<SensingEvent, Long
                                   @Param("from") Instant from,
                                   @Param("to") Instant to,
                                   Pageable pageable);
+
+    // I6: 하루치 위험도별 건수. AI가 산출해 저장한 risk_level이 단일 출처다(Backend 재계산 없음).
+    // 구간은 [from, to) 반개구간 — 자정 경계 이벤트가 양쪽 날짜에 이중 계상되지 않게 한다.
+    @Query("SELECT ra.riskLevel AS riskLevel, COUNT(ra) AS total " +
+           "FROM RiskAssessment ra, SensingEvent se " +
+           "WHERE ra.sensingEventId = se.id AND se.careTargetId = :ctId " +
+           "AND se.detectedAt >= :from AND se.detectedAt < :to " +
+           "GROUP BY ra.riskLevel")
+    List<RiskLevelCount> countByRiskLevel(@Param("ctId") Long careTargetId,
+                                          @Param("from") Instant from,
+                                          @Param("to") Instant to);
+
+    // I6: 하루치 activity_class별 건수. NULL(AI가 세부 분류를 안 보낸 이벤트)은 제외된다.
+    @Query("SELECT se.activityClass AS activityClass, COUNT(se) AS total " +
+           "FROM SensingEvent se " +
+           "WHERE se.careTargetId = :ctId AND se.activityClass IS NOT NULL " +
+           "AND se.detectedAt >= :from AND se.detectedAt < :to " +
+           "GROUP BY se.activityClass")
+    List<ActivityClassCount> countByActivityClass(@Param("ctId") Long careTargetId,
+                                                  @Param("from") Instant from,
+                                                  @Param("to") Instant to);
+
+    interface RiskLevelCount {
+        RiskLevel getRiskLevel();
+        long getTotal();
+    }
+
+    interface ActivityClassCount {
+        ActivityClass getActivityClass();
+        long getTotal();
+    }
 }

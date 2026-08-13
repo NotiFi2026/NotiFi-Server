@@ -18,28 +18,55 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FcmSender {
 
-    /** 앱(expo-notifications)이 생성하는 응급 알림 채널 ID */
-    private static final String EMERGENCY_CHANNEL_ID = "emergency";
+    /**
+     * 발송 등급. Android 채널과 우선순위를 함께 결정한다.
+     *
+     * <p>모든 알림을 응급 채널로 보내면 안 된다. 보호자가 매일 오는 리포트 소리를 끄려고
+     * 응급 채널을 무음으로 돌리는 순간 <b>진짜 낙상 알림까지 같이 죽는다.</b>
+     * 등급을 나눠 사용자가 그 선택을 하지 않아도 되게 한다.
+     */
+    public enum Channel {
+        /** 응급 — 잠금화면·도즈 상태에서도 즉시. 앱(expo-notifications)이 만드는 'emergency' 채널과 짝 */
+        EMERGENCY("emergency", AndroidConfig.Priority.HIGH),
+        /** 일반 — 앱 기본 채널·기본 중요도. 매일 도착하는 리포트처럼 급하지 않은 알림용 */
+        NORMAL(null, AndroidConfig.Priority.NORMAL);
+
+        private final String channelId;
+        private final AndroidConfig.Priority priority;
+
+        Channel(String channelId, AndroidConfig.Priority priority) {
+            this.channelId = channelId;
+            this.priority = priority;
+        }
+    }
 
     private final ObjectProvider<FirebaseMessaging> firebaseMessagingProvider;
 
     /**
      * FCM 단건 발송. 발송 성공 시 true, 실패(SDK 미초기화 포함) 시 false 반환.
+     *
+     * <p>{@code data}는 앱이 알림 탭 시 특정 화면(응급 상세·음성확인 UI 등)으로 라우팅하는 키를 담는다.
+     *
+     * <p><b>{@code channel}에 기본값을 두지 않는 것은 의도다.</b> 기본을 응급으로 두면 새 알림 유형을
+     * 추가하면서 등급을 빼먹었을 때 컴파일이 통과하고 조용히 응급 채널로 나간다 — 실제로 일일 리포트가
+     * 그렇게 나갔다. 호출부가 매번 등급을 밝히게 해서 컴파일러가 그 실수를 막는다.
      */
-    public boolean send(String token, String title, String body) {
-        return send(token, title, body, Map.of());
-    }
-
-    /**
-     * data 페이로드 포함 발송 — 앱이 알림 탭 시 특정 화면(음성확인 UI 등)으로 라우팅하는 키를 담는다.
-     * 응급 알림이므로 잠금화면·도즈 상태에서도 즉시 전달되도록 HIGH priority로 보낸다.
-     */
-    public boolean send(String token, String title, String body, Map<String, String> data) {
+    public boolean send(String token, String title, String body, Map<String, String> data,
+                        Channel channel) {
         FirebaseMessaging messaging = firebaseMessagingProvider.getIfAvailable();
         if (messaging == null) {
             log.warn("[FCM] Firebase 미초기화 — 발송 건너뜀 (token prefix: {})",
                     token.length() > 10 ? token.substring(0, 10) : token);
             return false;
+        }
+
+        AndroidConfig.Builder android = AndroidConfig.builder().setPriority(channel.priority);
+        if (channel.channelId != null) {
+            // 앱이 만든 채널과 이름이 일치해야 한다. 미지정이면 Android가 앱 기본 채널로
+            // 떨어뜨리는데, 일반 등급에는 그게 의도한 결과다.
+            android.setNotification(AndroidNotification.builder()
+                    .setChannelId(channel.channelId)
+                    .build());
         }
 
         Message message = Message.builder()
@@ -49,13 +76,7 @@ public class FcmSender {
                         .setBody(body)
                         .build())
                 .putAllData(data)
-                .setAndroidConfig(AndroidConfig.builder()
-                        .setPriority(AndroidConfig.Priority.HIGH)
-                        // 앱의 Android 알림 채널과 일치 필수 — 미지정 시 기본 채널로 떨어져 중요도 하향
-                        .setNotification(AndroidNotification.builder()
-                                .setChannelId(EMERGENCY_CHANNEL_ID)
-                                .build())
-                        .build())
+                .setAndroidConfig(android.build())
                 .build();
 
         try {
