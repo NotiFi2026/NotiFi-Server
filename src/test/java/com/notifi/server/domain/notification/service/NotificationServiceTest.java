@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
@@ -74,7 +75,7 @@ class NotificationServiceTest {
                 FcmToken.create(9L, "token-1", Platform.ANDROID),
                 FcmToken.create(9L, "token-2", Platform.IOS)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
@@ -83,8 +84,11 @@ class NotificationServiceTest {
                 "escalation_id", "10",
                 "escalation_step_id", "100"
         );
-        then(fcmSender).should().send(eq("token-1"), anyString(), anyString(), eq(expectedData));
-        then(fcmSender).should().send(eq("token-2"), anyString(), anyString(), eq(expectedData));
+        // 음성확인은 응급이다 — 잠금화면·도즈에서도 즉시 떠야 한다
+        then(fcmSender).should().send(eq("token-1"), anyString(), anyString(), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
+        then(fcmSender).should().send(eq("token-2"), anyString(), anyString(), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());
@@ -104,7 +108,7 @@ class NotificationServiceTest {
         given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
                 FcmToken.create(9L, "token-1", Platform.ANDROID)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(false);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(false);
 
         notificationService.dispatchVoiceCheck(new VoiceCheckRequestedEvent(100L, 10L, 45L));
 
@@ -125,7 +129,7 @@ class NotificationServiceTest {
         given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
                 FcmToken.create(9L, "token-1", Platform.ANDROID)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchGuardianNotify(new GuardianNotifyRequestedEvent(101L, 10L, 45L,
                 new GuardianMessage("낙상 의심", "낙상 가능성이 감지되었습니다.", "전화 확인을 권장합니다.")));
@@ -137,7 +141,8 @@ class NotificationServiceTest {
                 "care_target_id", "45"
         );
         then(fcmSender).should().send(eq("token-1"), eq("낙상 의심"),
-                eq("낙상 가능성이 감지되었습니다. 전화 확인을 권장합니다."), eq(expectedData));
+                eq("낙상 가능성이 감지되었습니다. 전화 확인을 권장합니다."), eq(expectedData),
+                eq(FcmSender.Channel.EMERGENCY));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         then(notificationRepository).should().save(captor.capture());
@@ -147,16 +152,18 @@ class NotificationServiceTest {
     // ── dispatchDailyReport ───────────────────────────────────────────────
 
     @Test
-    @DisplayName("dispatchDailyReport: 보호자 전원에게 DAILY_REPORT 카테고리로 발송, escalation_step_id는 null")
+    @DisplayName("dispatchDailyReport: 보호자 전원에게 일반 채널로 발송, escalation_step_id는 null")
     void dispatchDailyReport_sendsToAllGuardians() {
         CareTarget ct = careTarget(45L, null);
         given(careRelationshipRepository.findGuardiansByCareTargetId(45L)).willReturn(List.of(
-                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1)
+                CareRelationship.of(9L, ct, RelationshipType.FAMILY, true, (short) 1),
+                CareRelationship.of(11L, ct, RelationshipType.FAMILY, false, (short) 2)
         ));
-        given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
-                FcmToken.create(9L, "token-1", Platform.ANDROID)
+        given(fcmTokenRepository.findByUserIdIn(List.of(9L, 11L))).willReturn(List.of(
+                FcmToken.create(9L, "token-1", Platform.ANDROID),
+                FcmToken.create(11L, "token-2", Platform.IOS)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchDailyReport(new DailyReportSavedEvent(
                 210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.WARNING, "불안정한 보행이 있었어요"));
@@ -167,12 +174,17 @@ class NotificationServiceTest {
                 "care_target_id", "45",
                 "report_date", "2026-08-12"
         );
-        then(fcmSender).should().send(eq("token-1"), anyString(),
-                eq("불안정한 보행이 있었어요"), eq(expectedData));
+        // 매일 오는 알림을 응급 채널로 보내면 보호자가 응급 채널을 꺼서 진짜 낙상까지 놓친다
+        then(fcmSender).should().send(eq("token-1"), eq("일일 리포트가 도착했어요"),
+                eq("불안정한 보행이 있었어요"), eq(expectedData), eq(FcmSender.Channel.NORMAL));
+        then(fcmSender).should().send(eq("token-2"), eq("일일 리포트가 도착했어요"),
+                eq("불안정한 보행이 있었어요"), eq(expectedData), eq(FcmSender.Channel.NORMAL));
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        then(notificationRepository).should().save(captor.capture());
-        Notification saved = captor.getValue();
+        then(notificationRepository).should(times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(Notification::getRecipientUserId)
+                .containsExactly(9L, 11L);
+        Notification saved = captor.getAllValues().get(0);
         assertThat(saved.getCategory()).isEqualTo(NotificationCategory.DAILY_REPORT);
         // 에스컬레이션이 아니므로 단계 연결이 없다
         assertThat(saved.getEscalationStepId()).isNull();
@@ -189,7 +201,7 @@ class NotificationServiceTest {
         given(fcmTokenRepository.findByUserIdIn(List.of(9L))).willReturn(List.of(
                 FcmToken.create(9L, "token-1", Platform.ANDROID)
         ));
-        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap())).willReturn(true);
+        given(fcmSender.send(anyString(), anyString(), anyString(), anyMap(), any())).willReturn(true);
 
         notificationService.dispatchDailyReport(new DailyReportSavedEvent(
                 210L, 45L, LocalDate.of(2026, 8, 12), RiskLevel.SAFE, null));

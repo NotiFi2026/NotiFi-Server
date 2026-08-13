@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -27,17 +28,20 @@ public class InternalReportController {
 
     @Operation(
             summary = "[I3] 일일 리포트 적재",
-            description = "LLM이 생성한 일일 리포트를 적재한다. (care_target_id, report_date) 기준 UPSERT — 재적재 시 내용을 갱신하고 새 행을 만들지 않는다. " +
-                          "sections[].risk_level은 소문자로 와도 대문자(SAFE/WARNING/DANGER)로 정규화해 저장한다. " +
+            description = "LLM이 생성한 일일 리포트를 적재한다. (care_target_id, report_date) 기준 UPSERT — 신규 생성은 201, 기존 리포트 갱신은 200을 반환한다(응답의 created와 일치). " +
+                          "sections[].risk_level은 소문자로 와도 대문자(SAFE/WARNING/DANGER)로 정규화해 저장한다. 알 수 없는 등급이 섞여 있으면 거부하지 않고 대표 등급을 WARNING으로 승격한다. " +
                           "generated_at은 선택이며 없으면 서버 수신 시각으로 채운다. " +
-                          "신규 생성일 때만 보호자에게 DAILY_REPORT 알림·FCM을 발송한다(재적재는 무푸시). (권한: X-Internal-Key)"
+                          "신규 생성일 때만 보호자에게 DAILY_REPORT 알림·FCM을 발송한다(재적재는 무푸시, 응급이 아닌 일반 채널). (권한: X-Internal-Key)"
     )
+    // 이 엔드포인트만 ResponseEntity를 쓴다 — 상태코드가 적재 결과(신규/갱신)에 따라 갈리므로
+    // 정적인 @ResponseStatus로는 표현할 수 없다. 나머지 엔드포인트는 기존 컨벤션을 유지한다.
     @PostMapping("/reports")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<DailyReportIngestResponse> ingest(
+    public ResponseEntity<ApiResponse<DailyReportIngestResponse>> ingest(
             @Valid @RequestBody DailyReportIngestRequest request
     ) {
-        return ApiResponse.success(reportIngestService.ingest(request));
+        DailyReportIngestResponse result = reportIngestService.ingest(request);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(ApiResponse.success(result));
     }
 
     @Operation(

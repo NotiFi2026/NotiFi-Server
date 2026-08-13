@@ -4,6 +4,7 @@ import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.report.dto.DailyMetricsResponse;
 import com.notifi.server.domain.report.dto.DailyReportDetailResponse;
+import com.notifi.server.domain.report.dto.DailyReportIngestResponse;
 import com.notifi.server.domain.report.dto.DailyReportSummaryResponse;
 import com.notifi.server.domain.sensing.dto.PoseClipResponse;
 import com.notifi.server.domain.sensing.dto.SensingEventSummaryResponse;
@@ -153,6 +154,17 @@ class ClientJsonContractTest {
                 "tag", "risk_level", "title", "body", "recommended_action");
         // 적재 시 대문자로 정규화된다 — 앱은 한 가지 표기만 처리하면 된다
         assertThat(node.get("sections").get(0).get("risk_level").stringValue()).isEqualTo("WARNING");
+    }
+
+    @Test
+    @DisplayName("I3 적재 응답 — AI가 신규/갱신을 구분하는 created")
+    void dailyReportIngestResponseFieldNames() {
+        JsonNode node = json(new DailyReportIngestResponse(210L, 45L, true));
+
+        assertThat(node.propertyNames()).containsExactlyInAnyOrder(
+                "daily_report_id", "care_target_id", "created");
+        // boolean 접근자는 Jackson이 is/get 규칙으로 잘라낼 여지가 있어 값까지 확인한다
+        assertThat(node.get("created").booleanValue()).isTrue();
     }
 
     @Test

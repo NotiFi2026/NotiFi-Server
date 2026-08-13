@@ -10,6 +10,7 @@ import com.notifi.server.domain.report.exception.ReportErrorCode;
 import com.notifi.server.domain.report.repository.DailyReportRepository;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.global.exception.BusinessException;
+import com.notifi.server.global.exception.CommonErrorCode;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +126,7 @@ class ReportIngestServiceTest {
     @DisplayName("ingest: 다른 제약 위반은 중복으로 오보고하지 않고 그대로 전파한다")
     void ingest_otherConstraint_propagates() {
         givenNoExistingReport();
+        // V12가 명시한 실제 FK 제약명 — 허구의 이름을 쓰면 대조가 의미를 잃는다
         given(dailyReportRepository.save(any())).willThrow(constraintViolation("fk_daily_report_care_target"));
 
         assertThatThrownBy(() -> reportIngestService.ingest(request(sections(section("safe", "제목")))))
@@ -159,22 +162,137 @@ class ReportIngestServiceTest {
 
         DailyReport saved = captureSaved();
         assertThat(saved.getTopRiskLevel()).isEqualTo(RiskLevel.DANGER);
-        // 카드 제목은 최고 등급 섹션이 아니라 첫 섹션 title이다
-        assertThat(saved.getHeadline()).isEqualTo("첫 섹션");
+        assertThat(saved.getHeadline()).isEqualTo("두 번째 섹션");
     }
 
     @Test
-    @DisplayName("ingest: 알 수 없는 risk_level은 리포트를 거부하지 않고 무시한다")
-    void ingest_unknownRiskLevel_isIgnored() {
+    @DisplayName("ingest: 알 수 없는 risk_level은 거부하지 않되 대표 등급을 WARNING으로 승격한다")
+    void ingest_unknownRiskLevel_promotesToWarning() {
         givenNoExistingReport();
         givenSavedWithId(1L);
 
         reportIngestService.ingest(request(sections(section("critical", "오타 섹션"))));
 
         DailyReport saved = captureSaved();
-        // 원본 값이 보존되고(정규화 실패) 대표 등급은 SAFE로 떨어진다
+        // 원본 값은 보존한다(정규화 실패) — 무엇이 왔는지 나중에 추적할 수 있어야 한다
         assertThat(saved.getSections().get(0).get("risk_level")).isEqualTo("critical");
-        assertThat(saved.getTopRiskLevel()).isEqualTo(RiskLevel.SAFE);
+        // SAFE로 떨어뜨리면 AI가 새 등급을 추가했을 때 위험한 리포트가 카드에 "안전"으로 뜬다
+        assertThat(saved.getTopRiskLevel()).isEqualTo(RiskLevel.WARNING);
+    }
+
+    @Test
+    @DisplayName("ingest: 알 수 없는 등급이 섞여도 이미 DANGER면 그대로 둔다")
+    void ingest_unknownRiskLevel_doesNotDowngradeKnownDanger() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        reportIngestService.ingest(request(sections(
+                section("critical", "오타 섹션"),
+                section("danger", "낙상"))));
+
+        assertThat(captureSaved().getTopRiskLevel()).isEqualTo(RiskLevel.DANGER);
+    }
+
+    @Test
+    @DisplayName("ingest: risk_level 키가 아예 없는 섹션은 승격 사유가 아니다")
+    void ingest_missingRiskLevel_doesNotPromote() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        Map<String, Object> noLevel = new LinkedHashMap<>();
+        noLevel.put("tag", "risk_event");
+        noLevel.put("title", "등급 없는 섹션");
+        reportIngestService.ingest(request(sections(noLevel)));
+
+        // 오타(모르는 값)와 미전송은 다르다 — 후자까지 승격하면 정상 리포트가 전부 WARNING이 된다
+        assertThat(captureSaved().getTopRiskLevel()).isEqualTo(RiskLevel.SAFE);
+    }
+
+    // ── 섹션 방어 ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ingest: sections에 null 원소가 섞여도 나머지로 적재한다")
+    void ingest_nullSectionElement_isSkipped() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        List<Map<String, Object>> withNull = sections(section("warning", "정상 섹션"));
+        withNull.add(null);
+
+        reportIngestService.ingest(request(withNull));
+
+        DailyReport saved = captureSaved();
+        assertThat(saved.getSections()).hasSize(1);
+        assertThat(saved.getTopRiskLevel()).isEqualTo(RiskLevel.WARNING);
+    }
+
+    @Test
+    @DisplayName("ingest: 쓸 섹션이 하나도 없으면 400 — 섹션 없는 리포트는 리포트가 아니다")
+    void ingest_allSectionsNull_throws400() {
+        given(careTargetRepository.existsById(CARE_TARGET_ID)).willReturn(true);
+
+        List<Map<String, Object>> allNull = new ArrayList<>();
+        allNull.add(null);
+
+        assertThatThrownBy(() -> reportIngestService.ingest(request(allNull)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.INVALID_INPUT_VALUE);
+
+        then(dailyReportRepository).should(never()).save(any());
+    }
+
+    // ── headline ────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ingest: headline은 대표 등급을 만든 섹션의 title이다 — 카드 제목과 배지가 어긋나면 안 된다")
+    void ingest_headline_comesFromTopRiskSection() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        reportIngestService.ingest(request(sections(
+                section("safe", "평온한 하루였어요"),
+                section("danger", "낙상이 감지됐어요"))));
+
+        DailyReport saved = captureSaved();
+        assertThat(saved.getTopRiskLevel()).isEqualTo(RiskLevel.DANGER);
+        // 첫 섹션 title을 쓰면 "평온한 하루였어요 / 위험" 카드가 나온다
+        assertThat(saved.getHeadline()).isEqualTo("낙상이 감지됐어요");
+    }
+
+    @Test
+    @DisplayName("ingest: 동급 섹션이 여럿이면 먼저 온 섹션이 headline을 가져간다")
+    void ingest_headline_firstWinsAmongEqualLevels() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        reportIngestService.ingest(request(sections(
+                section("warning", "첫 주의"),
+                section("warning", "둘째 주의"))));
+
+        assertThat(captureSaved().getHeadline()).isEqualTo("첫 주의");
+    }
+
+    @Test
+    @DisplayName("ingest: 200자를 넘는 title은 컬럼 길이(200)로 자른다")
+    void ingest_longTitle_isTruncated() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        reportIngestService.ingest(request(sections(section("safe", "가".repeat(250)))));
+
+        // 자르지 않으면 VARCHAR(200)에서 DataIntegrityViolationException이 난다
+        assertThat(captureSaved().getHeadline()).hasSize(200);
+    }
+
+    @Test
+    @DisplayName("ingest: title이 비어 있으면 headline은 null이다")
+    void ingest_blankTitle_headlineIsNull() {
+        givenNoExistingReport();
+        givenSavedWithId(1L);
+
+        reportIngestService.ingest(request(sections(section("safe", "   "))));
+
+        assertThat(captureSaved().getHeadline()).isNull();
     }
 
     @Test
@@ -234,7 +352,7 @@ class ReportIngestServiceTest {
 
     @SafeVarargs
     private List<Map<String, Object>> sections(Map<String, Object>... items) {
-        return new java.util.ArrayList<>(List.of(items));
+        return new ArrayList<>(List.of(items));
     }
 
     private Map<String, Object> section(String riskLevel, String title) {
