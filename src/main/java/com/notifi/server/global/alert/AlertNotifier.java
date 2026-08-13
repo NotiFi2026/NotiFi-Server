@@ -10,8 +10,9 @@ import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -34,15 +35,34 @@ import java.util.stream.Collectors;
 @Component
 public class AlertNotifier {
 
+    /** 밀린 알림을 붙잡아 두는 한도. 이보다 쌓이면 새 알림을 버린다 — 뒤늦은 장애 알림은 값이 없다. */
+    private static final int ALERT_QUEUE_CAPACITY = 100;
+
     private final String webhookUrl;
     private final String environment;
     private final RestClient restClient;
-    /** 전용 단일 스레드 — @EnableAsync로 앱 전역 동작을 바꾸지 않고 이 컴포넌트만 격리한다. */
-    private final ExecutorService sender = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "alert-notifier");
-        thread.setDaemon(true);
-        return thread;
-    });
+    /**
+     * 전용 단일 스레드 — {@code @EnableAsync}로 앱 전역 동작을 바꾸지 않고 이 컴포넌트만 격리한다.
+     *
+     * <p>큐를 유계로 두고 거부를 로그로 흡수하는 이유가 둘이다.
+     * <ul>
+     *   <li><b>종료 경로</b>: {@code shutdown()} 이후 {@code execute()}는
+     *       {@code RejectedExecutionException}을 던진다. 그대로 두면 앱 종료 중 발생한
+     *       응급 발송 실패가 호출자로 번져, "호출자를 깨뜨리지 않는다"는 이 클래스의 약속이 깨진다.
+     *   <li><b>포화</b>: webhook이 매달리면 태스크가 무한히 쌓인다. 밀린 장애 알림은 어차피
+     *       뒤늦게 도착해 쓸모가 적으므로, 쌓아 두느니 버리고 그 사실을 남긴다.
+     * </ul>
+     */
+    private final ExecutorService sender = new ThreadPoolExecutor(
+            1, 1, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(ALERT_QUEUE_CAPACITY),
+            runnable -> {
+                Thread thread = new Thread(runnable, "alert-notifier");
+                thread.setDaemon(true);
+                return thread;
+            },
+            (task, executor) -> log.warn("[ALERT] 알림 전송을 건너뜀 — 대기열 포화 또는 종료 중")
+    );
 
     public AlertNotifier(
             @Value("${alert.webhook-url:}") String webhookUrl,

@@ -97,3 +97,8 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:false}
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
+
+alert:
+  # 기본값을 뒤집는다 — 안 그러면 운영 장애 알림이 "[local]"로 도착해
+  # 여러 환경을 한 채널로 받을 때 어디서 난 장애인지 오판하게 된다.
+  environment: ${ALERT_ENVIRONMENT:prod}
