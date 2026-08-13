@@ -66,4 +66,19 @@ public class EscalationController {
     ) {
         return ApiResponse.success(escalationService.resolve(userId, id, request));
     }
+
+    @Operation(
+            summary = "[E4] 노인 본인 '괜찮아요' 응답",
+            description = "노인이 앱에서 직접 안전을 알려 에스컬레이션을 해소한다. 음성 확인이 어려울 때의 대안 경로로, "
+                    + "음성으로 USER_OK를 응답한 것과 같은 SELF_RESOLVED 결과가 된다. "
+                    + "보호자는 호출할 수 없다 — 보호자에겐 E3가 따로 있다. "
+                    + "이미 종료된 에스컬레이션 재요청 시 409. (권한: 노인 본인)"
+    )
+    @PostMapping("/escalations/{id}/self-ok")
+    public ApiResponse<EscalationDetailResponse> selfConfirmSafe(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id
+    ) {
+        return ApiResponse.success(escalationService.selfConfirmSafe(userId, id));
+    }
 }

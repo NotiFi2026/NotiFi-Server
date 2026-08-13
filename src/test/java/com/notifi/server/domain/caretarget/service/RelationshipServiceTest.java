@@ -2,6 +2,7 @@ package com.notifi.server.domain.caretarget.service;
 
 import com.notifi.server.domain.caretarget.dto.*;
 import com.notifi.server.domain.caretarget.entity.CareRelationship;
+import com.notifi.server.domain.caretarget.dto.RecipientCodeCreateResponse;
 import com.notifi.server.domain.caretarget.entity.CareTarget;
 import com.notifi.server.domain.caretarget.entity.Gender;
 import com.notifi.server.domain.caretarget.entity.RelationshipType;
@@ -116,17 +117,19 @@ class RelationshipServiceTest {
     }
 
     @Test
-    @DisplayName("issueRecipientCode: 이미 계정 연결된 노인 → 409 CARE_TARGET_ALREADY_LINKED")
-    void issueRecipientCode_alreadyLinked() {
+    @DisplayName("issueRecipientCode: 이미 연결된 노인에게도 발급한다 — 재로그인 복구 경로")
+    void issueRecipientCode_alreadyLinked_stillIssues() {
         CareTarget ct = careTarget(45L);
         ct.linkUser(9L);
         given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
+        given(inviteCodeStore.issueRecipientCode(any())).willReturn("RC3DE7FG");
+        given(inviteCodeStore.nextExpiresAt()).willReturn(Instant.parse("2026-08-14T00:00:00Z"));
 
-        assertThatThrownBy(() -> relationshipService.issueRecipientCode(1L, 45L))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
-        then(inviteCodeStore).shouldHaveNoInteractions();
+        RecipientCodeCreateResponse res = relationshipService.issueRecipientCode(1L, 45L);
+
+        // 여기서 막으면 세션이 끊긴 노인을 되살릴 방법이 보호자의 방문뿐이다.
+        // 노인은 이메일·비밀번호를 모르고 재설정 경로도 없다.
+        assertThat(res.code()).isEqualTo("RC3DE7FG");
     }
 
     // ── previewInviteCode (R1-c) ───────────────────────────────────────────

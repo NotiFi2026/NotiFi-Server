@@ -289,7 +289,7 @@ class SensingQueryServiceTest {
         ReflectionTestUtils.setField(event, "id", 10L);
         given(sensingEventRepository.findById(10L)).willReturn(Optional.of(event));
         willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
-                .given(accessValidator).requireRelationship(1L, 45L);
+                .given(accessValidator).requireRelationshipOrSelf(1L, 45L);
 
         assertThatThrownBy(() -> sensingQueryService.getPoseClip(1L, 10L))
                 .isInstanceOf(BusinessException.class)

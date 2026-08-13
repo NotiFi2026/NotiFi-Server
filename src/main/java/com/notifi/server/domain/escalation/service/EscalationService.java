@@ -111,7 +111,8 @@ public class EscalationService {
     @Transactional(readOnly = true)
     public PageResponse<EscalationSummaryResponse> listEscalations(
             Long userId, Long careTargetId, Pageable pageable) {
-        accessValidator.requireRelationship(userId, careTargetId);
+        // 노인 본인도 자기 응급 이력을 본다
+        accessValidator.requireRelationshipOrSelf(userId, careTargetId);
         Page<EscalationSummaryResponse> page =
                 escalationRepository.findByCareTargetId(careTargetId, pageable)
                         .map(EscalationSummaryResponse::from);
@@ -124,7 +125,7 @@ public class EscalationService {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         SensingEvent event = resolveSensingEvent(escalation);
-        accessValidator.requireRelationship(userId, event.getCareTargetId());
+        accessValidator.requireRelationshipOrSelf(userId, event.getCareTargetId());
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return buildDetail(escalation, steps, event);
@@ -148,6 +149,35 @@ public class EscalationService {
         }
 
         escalation.resolve(req.resolutionType(), req.memo());
+
+        List<EscalationStep> steps =
+                escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
+        return buildDetail(escalation, steps, event);
+    }
+
+    // ── E4: 노인 본인 "괜찮아요" ──────────────────────────────────────────────
+    /**
+     * 노인이 앱에서 직접 안전을 알린다 — 음성 확인이 안 될 때의 대안 경로.
+     *
+     * <p>E3(보호자 해제)를 열어 주지 않는 이유: {@code GUARDIAN_HANDLED}·{@code FALSE_ALARM}은
+     * <b>보호자가 상황을 판단했다는 의미</b>다. 노인이 "괜찮다"고 하는 것은 그것과 다르고,
+     * 시스템에 이미 대응하는 개념이 있다 — 음성 확인이 USER_OK를 받았을 때의 {@code SELF_RESOLVED}.
+     * 같은 결과로 모아 두면 "노인이 스스로 괜찮다고 했다"가 어느 경로로 들어오든 한 가지로 읽힌다.
+     *
+     * <p>보호자는 이 경로를 쓸 수 없다 — 남이 대신 눌러 주면 자기응답의 의미가 사라진다.
+     */
+    @Transactional
+    public EscalationDetailResponse selfConfirmSafe(Long userId, Long escalationId) {
+        // 행 잠금 — recordStep(I2)·resolve(E3)와 직렬화. 음성 응답과 버튼이 동시에 들어와도 한쪽만 이긴다
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
+                .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireSelf(userId, event.getCareTargetId());
+
+        if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
+            throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
+        }
+        escalation.resolve(ResolutionType.SELF_RESOLVED, "노인 본인 앱 응답 자동 해소");
 
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);

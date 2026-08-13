@@ -44,6 +44,21 @@ public class CareTargetAccessValidator {
         }
     }
 
+    /**
+     * 노인 본인만 허용 — 보호자도 막는다.
+     *
+     * <p>"본인이 직접 괜찮다고 했다"가 성립해야 하는 경로에 쓴다. 보호자가 대신 눌러 줄 수 있으면
+     * 그 의미가 사라지고, 보호자에겐 이미 자기 이름으로 해제하는 경로(E3)가 따로 있다.
+     */
+    public void requireSelf(Long userId, Long careTargetId) {
+        Long linkedUserId = careTargetRepository.findById(careTargetId)
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .getUserId();
+        if (!userId.equals(linkedUserId)) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+    }
+
     /** 보호자 관계 또는 노인 본인(care_target.user_id == userId) 허용. */
     public void requireRelationshipOrSelf(Long userId, Long careTargetId) {
         if (careRelationshipRepository.existsByUserIdAndCareTargetId(userId, careTargetId)) {

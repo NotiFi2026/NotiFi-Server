@@ -3,6 +3,7 @@ package com.notifi.server.domain.auth.service;
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
 import com.notifi.server.domain.auth.exception.AuthErrorCode;
+import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
@@ -25,6 +26,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
+    private final FcmTokenRepository fcmTokenRepository;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
@@ -59,7 +61,7 @@ public class AuthService {
         String accessToken = jwtTokenProvider.createAccessToken(user.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getId(), role);
 
-        refreshTokenStore.save(user.getId(), refreshToken);
+        refreshTokenStore.save(user.getId(), refreshToken, role);
         user.recordLogin();
 
         return LoginResponse.of(accessToken, refreshToken, user);
@@ -89,13 +91,23 @@ public class AuthService {
         String newAccess = jwtTokenProvider.createAccessToken(userId, role);
         String newRefresh = jwtTokenProvider.createRefreshToken(userId, role);
 
-        refreshTokenStore.save(userId, newRefresh);
+        refreshTokenStore.save(userId, newRefresh, role);
 
         return new TokenResponse(newAccess, newRefresh);
     }
 
+    /**
+     * 세션 종료 — 리프레시 토큰과 함께 <b>FCM 토큰도 지운다.</b>
+     *
+     * <p>토큰을 남겨 두면 로그아웃된 폰에 푸시가 계속 나가고 서버는 그걸 발송 성공으로 기록한다.
+     * 노인 폰에서 이게 특히 나쁘다 — 음성 확인 알림은 뜨는데 눌러도 로그인 화면이라 응답할 수
+     * 없고, 서버 관점에선 모든 게 정상이라 <b>아무도 실패를 모른다.</b>
+     * 토큰을 지우면 발송 대상이 0이 되어 최소한 관측 가능한 실패가 된다.
+     */
+    @Transactional
     public void logout(Long userId) {
         refreshTokenStore.delete(userId);
+        fcmTokenRepository.deleteByUserId(userId);
     }
 
     private Long parseRefreshToken(String token) {

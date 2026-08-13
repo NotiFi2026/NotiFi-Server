@@ -59,7 +59,7 @@ class ReportQueryServiceTest {
 
         DailyReportDetailResponse res = reportQueryService.getReport(USER_ID, 210L);
 
-        then(careTargetAccessValidator).should().requireRelationship(USER_ID, CARE_TARGET_ID);
+        then(careTargetAccessValidator).should().requireRelationshipOrSelf(USER_ID, CARE_TARGET_ID);
         assertThat(res.dailyReportId()).isEqualTo(210L);
         assertThat(res.careTargetId()).isEqualTo(CARE_TARGET_ID);
         assertThat(res.riskLevel()).isEqualTo(RiskLevel.WARNING);
@@ -82,7 +82,7 @@ class ReportQueryServiceTest {
     void getReport_unrelatedUser_blocked() {
         given(dailyReportRepository.findById(210L)).willReturn(Optional.of(report()));
         willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
-                .given(careTargetAccessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
+                .given(careTargetAccessValidator).requireRelationshipOrSelf(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> reportQueryService.getReport(USER_ID, 210L))
                 .isInstanceOf(BusinessException.class);

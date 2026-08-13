@@ -57,15 +57,24 @@ public class RelationshipService {
 
     // ── R5: 노인 계정 연결코드 발급 ─────────────────────────────────────────────
 
+    /**
+     * 최초 가입용이자 <b>재로그인 복구용</b> 코드를 발급한다.
+     *
+     * <p>이미 연결된 노인에게도 발급한다. 노인은 이메일·비밀번호를 모르는 것이 정상이라
+     * (보호자가 만들어 준다) 앱 재설치·기기 교체로 세션이 끊기면 <b>스스로 돌아올 방법이 없고,
+     * 비밀번호 재설정 경로도 없다.</b> 여기서 막으면 보호자가 직접 찾아가는 수밖에 없다 —
+     * 실증 현장에서는 그게 곧 서비스 중단이다.
+     *
+     * <p>주 보호자만·단발·24시간 제한은 그대로라 발급을 허용해도 신뢰 모델은 같다.
+     */
     @Transactional(readOnly = true)
     public RecipientCodeCreateResponse issueRecipientCode(Long userId, Long careTargetId) {
         accessValidator.requirePrimary(userId, careTargetId);
 
-        CareTarget careTarget = careTargetRepository.findById(careTargetId)
+        // 노인이 존재하는지(soft delete 포함)만 확인한다 — 연결 여부는 A5가 판단해
+        // 신규 가입/재연결로 갈라진다
+        careTargetRepository.findById(careTargetId)
                 .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND));
-        if (careTarget.getUserId() != null) {
-            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
-        }
 
         String code = inviteCodeStore.issueRecipientCode(new RecipientCodePayload(careTargetId, userId));
         return new RecipientCodeCreateResponse(code, inviteCodeStore.nextExpiresAt());
