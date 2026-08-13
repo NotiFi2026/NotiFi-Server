@@ -46,9 +46,7 @@ public class ReportQueryService {
     @Transactional(readOnly = true)
     public PageResponse<DailyReportSummaryResponse> getReports(Long userId, Long careTargetId, Pageable pageable) {
         careTargetAccessValidator.requireRelationship(userId, careTargetId);
-        return PageResponse.from(dailyReportRepository
-                .findByCareTargetId(careTargetId, pageable)
-                .map(DailyReportSummaryResponse::of));
+        return PageResponse.from(dailyReportRepository.findSummaries(careTargetId, pageable));
     }
 
     /** P2 — 리포트 상세. 리포트가 매달린 노인에 대한 관계가 있어야 한다. */

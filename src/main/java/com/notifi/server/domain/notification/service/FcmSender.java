@@ -44,19 +44,13 @@ public class FcmSender {
 
     /**
      * FCM 단건 발송. 발송 성공 시 true, 실패(SDK 미초기화 포함) 시 false 반환.
+     *
+     * <p>{@code data}는 앱이 알림 탭 시 특정 화면(응급 상세·음성확인 UI 등)으로 라우팅하는 키를 담는다.
+     *
+     * <p><b>{@code channel}에 기본값을 두지 않는 것은 의도다.</b> 기본을 응급으로 두면 새 알림 유형을
+     * 추가하면서 등급을 빼먹었을 때 컴파일이 통과하고 조용히 응급 채널로 나간다 — 실제로 일일 리포트가
+     * 그렇게 나갔다. 호출부가 매번 등급을 밝히게 해서 컴파일러가 그 실수를 막는다.
      */
-    public boolean send(String token, String title, String body) {
-        return send(token, title, body, Map.of());
-    }
-
-    /**
-     * data 페이로드 포함 발송 — 앱이 알림 탭 시 특정 화면(음성확인 UI 등)으로 라우팅하는 키를 담는다.
-     * 등급 미지정 시 응급으로 보낸다 — 기존 호출부(에스컬레이션)의 동작을 그대로 유지하기 위함이다.
-     */
-    public boolean send(String token, String title, String body, Map<String, String> data) {
-        return send(token, title, body, data, Channel.EMERGENCY);
-    }
-
     public boolean send(String token, String title, String body, Map<String, String> data,
                         Channel channel) {
         FirebaseMessaging messaging = firebaseMessagingProvider.getIfAvailable();
