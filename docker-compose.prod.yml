@@ -1,0 +1,55 @@
+# 운영 오버레이 — 기본 compose 위에 얹어 쓴다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 기본 compose는 로컬 개발용이라 DB 포트를 호스트에 열고 로그·메모리에 제한이 없다.
+# 그대로 배포하면 DB가 인터넷에 노출되고, 로그가 디스크를 채워 서버가 죽는다.
+services:
+  postgres:
+    # 개발 편의로 열어 둔 5432를 닫는다. 앱은 compose 내부 네트워크로 붙으므로
+    # 호스트 포트가 필요 없다 — 열어 두면 인터넷에서 DB에 직접 닿는다.
+    ports: !reset []
+    logging: &logging
+      driver: json-file
+      options:
+        # 기본값은 무제한이다. 작은 VM에서 며칠이면 디스크를 채우고 서버 전체가 멈춘다.
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    ports: !reset []
+    logging: *logging
+    # 컨테이너 한도만 걸고 Redis에 상한을 안 주면, Redis는 자기 한도를 모른 채 쓰다가
+    # 커널에 OOM 킬 당한다. 여기 든 건 리프레시 토큰이라 프로세스가 죽으면
+    # 전 사용자 세션이 한 번에 날아간다 — 보호자 전원이 로그아웃된다.
+    # 컨테이너 한도보다 낮게 잡아 Redis가 먼저 스스로 정리하게 한다.
+    # volatile-lru: TTL이 있는 키(=어차피 만료될 토큰)부터 밀어낸다.
+    # TTL 없는 키는 건드리지 않으므로, 밀어낼 게 없으면 조용히 죽는 대신 쓰기가 거부된다.
+    command: ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "volatile-lru"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    logging: *logging
+    # 컨테이너가 살아 있어도 앱이 응답을 못 하는 상태가 있다(커넥션 풀 고갈 등).
+    # PID만 보는 restart 정책으로는 그걸 못 잡으므로 실제 응답으로 판정한다.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      # JVM + Flyway 기동에 시간이 걸린다. 이 시간 동안의 실패는 unhealthy로 세지 않는다
+      start_period: 90s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          # JVM heap은 컨테이너 한도의 비율로 잡히므로 여기가 실질 상한이다
+          memory: 1G
