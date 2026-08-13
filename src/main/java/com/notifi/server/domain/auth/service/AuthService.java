@@ -106,8 +106,11 @@ public class AuthService {
      */
     @Transactional
     public void logout(Long userId) {
-        refreshTokenStore.delete(userId);
+        // DB를 먼저 지운다 — 실패하면 트랜잭션이 롤백되어 아무 일도 안 일어난 상태로 끝난다.
+        // 반대 순서면 Redis만 지워져 "로그아웃됐는데 FCM 토큰은 남은" 상태가 되는데,
+        // 그게 정확히 이 메서드가 없애려는 상태다.
         fcmTokenRepository.deleteByUserId(userId);
+        refreshTokenStore.delete(userId);
     }
 
     private Long parseRefreshToken(String token) {

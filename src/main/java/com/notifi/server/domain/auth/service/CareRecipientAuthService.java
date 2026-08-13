@@ -10,6 +10,7 @@ import com.notifi.server.domain.caretarget.exception.RelationshipErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
+import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -39,6 +40,7 @@ public class CareRecipientAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
+    private final FcmTokenRepository fcmTokenRepository;
 
     /** 서버 생성 이메일의 도메인. 실제 수신 가능한 주소와 절대 충돌하지 않도록 예약 도메인을 쓴다. */
     private static final String GENERATED_EMAIL_DOMAIN = "@care.notifi.internal";
@@ -79,9 +81,18 @@ public class CareRecipientAuthService {
 
     /** 이미 연결된 노인 — 기존 계정 그대로 새 세션을 연다. 요청의 자격증명 필드는 무시한다. */
     private User relink(CareTarget careTarget) {
-        return userRepository.findById(careTarget.getUserId())
+        User user = userRepository.findById(careTarget.getUserId())
                 // 노인 계정이 사라졌는데 careTarget이 연결을 붙들고 있는 상태 — 코드로는 복구 불가
                 .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED));
+
+        // 연결된 계정이 노인이 아니면 거부한다. 지금은 linkUser 호출부가 하나뿐이라 항상
+        // CARE_RECIPIENT지만, 다른 곳에서 linkUser를 부르는 날 이 코드가 그대로면
+        // **연결코드로 보호자 세션이 발급되는 권한 상승**이 된다. 인증 경로에서
+        // "지금은 괜찮다"에 기대면 안 된다.
+        if (user.getRole() != Role.CARE_RECIPIENT) {
+            throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
+        }
+        return user;
     }
 
     private User createAndLink(CareTarget careTarget, RecipientSignupRequest request) {
@@ -119,6 +130,13 @@ public class CareRecipientAuthService {
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getId(), role);
         // 기존 세션은 교체된다 — 한 계정 한 세션
         refreshTokenStore.save(user.getId(), refreshToken, role);
+
+        // 옛 기기의 FCM 토큰도 함께 정리한다. 세션만 교체하고 토큰을 남기면 기기를 바꿔
+        // 재연결했을 때 **옛 폰에도 음성 확인 푸시가 계속 가고 서버는 성공으로 기록한다** —
+        // 그 폰은 액세스 토큰이 만료되는 순간 응답할 수 없게 되므로 로그아웃 때와 같은 유령 상태다.
+        // 새 기기는 세션을 연 뒤 N3로 자기 토큰을 등록한다(앱 계약).
+        fcmTokenRepository.deleteByUserId(user.getId());
+
         user.recordLogin();
 
         return RecipientSignupResponse.of(accessToken, refreshToken, user, careTargetId);

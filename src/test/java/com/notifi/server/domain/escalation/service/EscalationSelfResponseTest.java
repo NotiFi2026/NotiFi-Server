@@ -6,7 +6,10 @@ import com.notifi.server.domain.caretarget.service.CareTargetAccessValidator;
 import com.notifi.server.domain.escalation.dto.EscalationDetailResponse;
 import com.notifi.server.domain.escalation.entity.Escalation;
 import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.entity.EscalationStep;
 import com.notifi.server.domain.escalation.entity.ResolutionType;
+import com.notifi.server.domain.escalation.entity.StepStatus;
+import com.notifi.server.domain.escalation.entity.StepType;
 import com.notifi.server.domain.escalation.exception.EscalationErrorCode;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.escalation.repository.EscalationStepRepository;
@@ -21,6 +24,7 @@ import com.notifi.server.global.exception.CommonErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -28,13 +32,16 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 
 /**
  * E4 — 노인 본인 "괜찮아요".
@@ -92,6 +99,51 @@ class EscalationSelfResponseTest {
         assertThat(escalation.getStatus()).isEqualTo(EscalationStatus.RESOLVED);
         assertThat(escalation.getResolutionType()).isEqualTo(ResolutionType.SELF_RESOLVED);
         assertThat(res.escalationId()).isEqualTo(ESCALATION_ID);
+    }
+
+    @Test
+    @DisplayName("음성 단계가 이미 있으면 갱신한다 — 행이 늘면 UNIQUE(escalation_id, step_type)에 걸린다")
+    void selfConfirm_updatesExistingVoiceCheckStep() {
+        givenInProgressEscalation();
+        EscalationStep existing = EscalationStep.record(
+                ESCALATION_ID, StepType.VOICE_CHECK, (short) 1, StepStatus.EXECUTED,
+                Instant.parse("2026-08-13T03:22:05Z"), null, Map.of("prompt", "괜찮으세요?"));
+        given(escalationStepRepository.findByEscalationIdAndStepType(ESCALATION_ID, StepType.VOICE_CHECK))
+                .willReturn(Optional.of(existing));
+        given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(ESCALATION_ID))
+                .willReturn(List.of(existing));
+        given(careTargetRepository.findById(CARE_TARGET_ID))
+                .willReturn(Optional.of(CareTarget.create("박순자", null, null, null, null)));
+
+        escalationService.selfConfirmSafe(RECIPIENT_USER_ID, ESCALATION_ID);
+
+        assertThat(existing.getStatus()).isEqualTo(StepStatus.RESPONDED);
+        // 음성으로 답했는지 버튼을 눌렀는지 구분이 남아야 한다
+        assertThat(existing.getResponseDetail())
+                .containsEntry("response_result", "USER_OK")
+                .containsEntry("channel", "app_button");
+        // AI가 기록한 실행 시각은 보존한다
+        assertThat(existing.getExecutedAt()).isEqualTo(Instant.parse("2026-08-13T03:22:05Z"));
+        then(escalationStepRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("음성 단계가 없으면 새로 남긴다 — 응답 사실이 이력에서 사라지면 안 된다")
+    void selfConfirm_createsStepWhenAbsent() {
+        givenInProgressEscalation();
+        given(escalationStepRepository.findByEscalationIdAndStepType(ESCALATION_ID, StepType.VOICE_CHECK))
+                .willReturn(Optional.empty());
+        given(escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(ESCALATION_ID))
+                .willReturn(List.of());
+        given(careTargetRepository.findById(CARE_TARGET_ID))
+                .willReturn(Optional.of(CareTarget.create("박순자", null, null, null, null)));
+
+        escalationService.selfConfirmSafe(RECIPIENT_USER_ID, ESCALATION_ID);
+
+        ArgumentCaptor<EscalationStep> captor = ArgumentCaptor.forClass(EscalationStep.class);
+        then(escalationStepRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getStepType()).isEqualTo(StepType.VOICE_CHECK);
+        assertThat(captor.getValue().getStatus()).isEqualTo(StepStatus.RESPONDED);
     }
 
     @Test

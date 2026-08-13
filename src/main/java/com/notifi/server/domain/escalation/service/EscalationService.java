@@ -32,7 +32,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -177,11 +179,39 @@ public class EscalationService {
         if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
             throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
         }
+
+        recordSelfResponseStep(escalationId);
         escalation.resolve(ResolutionType.SELF_RESOLVED, "노인 본인 앱 응답 자동 해소");
 
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return buildDetail(escalation, steps, event);
+    }
+
+    /**
+     * 응답 사실을 단계 기록에 남긴다.
+     *
+     * <p>해소만 하고 단계를 안 남기면 보호자가 응급 상세를 열었을 때 "음성 확인 실행됨" 다음에
+     * 아무 흔적 없이 해소돼 있다. 음성으로 USER_OK를 받은 경우({@code recordStep})는 RESPONDED
+     * 단계를 남기므로, 같은 사건인데 경로에 따라 기록이 달라진다. <b>응급 이력에서 누가 언제
+     * 어떻게 응답했는지는 남아야 한다.</b>
+     *
+     * <p>{@code step_type}은 CHECK 제약이 3종뿐이라 {@code VOICE_CHECK}를 재사용하고,
+     * 음성인지 버튼인지는 {@code response_detail.channel}로 구분한다.
+     * {@code UNIQUE(escalation_id, step_type)} 때문에 <b>있으면 갱신, 없으면 생성</b>한다 —
+     * AI가 음성 확인을 이미 EXECUTED로 기록해 둔 상태가 정상 경로다.
+     */
+    private void recordSelfResponseStep(Long escalationId) {
+        Instant now = Instant.now();
+        Map<String, Object> detail = Map.of("response_result", "USER_OK", "channel", "app_button");
+
+        escalationStepRepository.findByEscalationIdAndStepType(escalationId, StepType.VOICE_CHECK)
+                .ifPresentOrElse(
+                        step -> step.updateProgress(StepStatus.RESPONDED, step.getExecutedAt(), now, detail),
+                        () -> escalationStepRepository.save(EscalationStep.record(
+                                escalationId, StepType.VOICE_CHECK, (short) 1,
+                                StepStatus.RESPONDED, now, now, detail))
+                );
     }
 
     // ── private ───────────────────────────────────────────────────────────────

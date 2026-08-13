@@ -11,6 +11,7 @@ import com.notifi.server.domain.caretarget.exception.RelationshipErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
+import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -45,6 +46,7 @@ class CareRecipientAuthServiceTest {
     @Mock PasswordEncoder passwordEncoder;
     @Mock JwtTokenProvider jwtTokenProvider;
     @Mock RefreshTokenStore refreshTokenStore;
+    @Mock FcmTokenRepository fcmTokenRepository;
 
     @InjectMocks CareRecipientAuthService careRecipientAuthService;
 
@@ -152,6 +154,26 @@ class CareRecipientAuthServiceTest {
     }
 
     @Test
+    @DisplayName("signup: 연결된 계정이 노인이 아니면 거부 — 연결코드로 보호자 세션이 나오면 권한 상승이다")
+    void signup_relinkRejectsNonRecipientAccount() {
+        given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
+        CareTarget ct = careTarget(45L);
+        ct.linkUser(8L);
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(ct));
+
+        User guardian = User.create("g@b.com", "hash", "김보호", Role.GUARDIAN);
+        ReflectionTestUtils.setField(guardian, "id", 8L);
+        given(userRepository.findById(8L)).willReturn(Optional.of(guardian));
+
+        assertThatThrownBy(() -> careRecipientAuthService.signup(REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
+        then(refreshTokenStore).shouldHaveNoInteractions();
+    }
+
+    @Test
     @DisplayName("signup: 이미 연결된 노인은 기존 계정으로 재연결된다 — 로그아웃 복구 경로")
     void signup_alreadyLinked_relinks() {
         given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
@@ -174,6 +196,8 @@ class CareRecipientAuthServiceTest {
         assertThat(resp.careTargetId()).isEqualTo(45L);
         then(userRepository).should(never()).save(any());
         then(refreshTokenStore).should().save(8L, "refresh", "CARE_RECIPIENT");
+        // 기기를 바꿔 재연결하면 옛 폰 토큰이 남아 응답 못 하는 기기로 푸시가 계속 간다
+        then(fcmTokenRepository).should().deleteByUserId(8L);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
