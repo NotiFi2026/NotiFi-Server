@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -203,15 +204,27 @@ public class EscalationService {
      */
     private void recordSelfResponseStep(Long escalationId) {
         Instant now = Instant.now();
-        Map<String, Object> detail = Map.of("response_result", "USER_OK", "channel", "app_button");
 
         escalationStepRepository.findByEscalationIdAndStepType(escalationId, StepType.VOICE_CHECK)
                 .ifPresentOrElse(
-                        step -> step.updateProgress(StepStatus.RESPONDED, step.getExecutedAt(), now, detail),
+                        // 기존 detail을 덮어쓰지 않고 병합한다 — 통째로 갈아치우면 AI가 남긴
+                        // TTS 프롬프트·언어 같은 실행 기록이 사라진다. 실행 시각도 보존한다.
+                        step -> step.updateProgress(StepStatus.RESPONDED, step.getExecutedAt(), now,
+                                mergeResponseDetail(step.getResponseDetail())),
                         () -> escalationStepRepository.save(EscalationStep.record(
                                 escalationId, StepType.VOICE_CHECK, (short) 1,
-                                StepStatus.RESPONDED, now, now, detail))
+                                StepStatus.RESPONDED, now, now, mergeResponseDetail(null)))
                 );
+    }
+
+    private Map<String, Object> mergeResponseDetail(Map<String, Object> existing) {
+        Map<String, Object> merged = existing != null
+                ? new LinkedHashMap<>(existing)
+                : new LinkedHashMap<>();
+        merged.put("response_result", "USER_OK");
+        // 음성으로 답했는지 버튼을 눌렀는지 구분이 남아야 한다
+        merged.put("channel", "app_button");
+        return merged;
     }
 
     // ── private ───────────────────────────────────────────────────────────────

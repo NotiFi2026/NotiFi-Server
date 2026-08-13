@@ -58,14 +58,23 @@ public class CareRecipientAuthService {
      */
     @Transactional
     public RecipientSignupResponse signup(RecipientSignupRequest request) {
-        // 이메일을 직접 준 경우엔 코드 소모(findAndDelete) 전에 중복을 걸러낸다 — 흔한 실패로
-        // 단발 코드를 태우면 보호자가 다시 발급해야 한다. 생략된 경우는 careTargetId가 필요해
-        // 여기서 검사할 수 없고, 서버 생성 주소는 예약 도메인이라 애초에 충돌하지 않는다.
-        if (request.email() != null && !request.email().isBlank()
+        // 소비 전에 먼저 들여다본다. 신규 가입인지 재연결인지를 알아야 검사할 것이 갈린다 —
+        // 재연결에는 이메일 검사를 하면 안 되고(기존 계정을 그대로 쓰므로 항상 중복이다),
+        // 신규에는 검사를 코드 소비보다 먼저 해야 흔한 실패로 단발 코드가 타지 않는다.
+        RecipientCodePayload peeked = inviteCodeStore.findRecipientCode(request.code())
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
+
+        CareTarget peekedTarget = careTargetRepository.findById(peeked.careTargetId())
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
+        boolean isRelink = peekedTarget.getUserId() != null;
+
+        if (!isRelink && request.email() != null && !request.email().isBlank()
                 && userRepository.existsByEmail(request.email().toLowerCase(Locale.ROOT))) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
+        // 실제 소비는 여기서 원자적으로 한다 — 위 조회가 코드를 재사용 가능하게 만들지 않는다.
+        // 같은 코드로 동시에 들어오면 getAndDelete가 한쪽만 통과시킨다.
         RecipientCodePayload payload = inviteCodeStore.findAndDeleteRecipientCode(request.code())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
 

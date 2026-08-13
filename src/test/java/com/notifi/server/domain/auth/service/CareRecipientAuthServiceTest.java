@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +57,8 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 이메일·비밀번호를 생략하면 서버가 만든다 — 보호자가 지어낼 것이 없다")
     void signup_generatesCredentialsWhenOmitted() {
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
                 .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         CareTarget ct = careTarget(45L);
@@ -89,6 +92,8 @@ class CareRecipientAuthServiceTest {
     @DisplayName("signup: 정상 가입 → CARE_RECIPIENT 계정 생성 + 노인 연결 + 토큰 발급")
     void signup_success() {
         given(userRepository.existsByEmail("old@b.com")).willReturn(false);
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
                 .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
 
@@ -116,6 +121,9 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 이메일 중복 → EMAIL_ALREADY_EXISTS, 코드 미소모")
     void signup_duplicateEmail_codeNotConsumed() {
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(careTarget(45L)));
         given(userRepository.existsByEmail("old@b.com")).willReturn(true);
 
         assertThatThrownBy(() -> careRecipientAuthService.signup(REQUEST))
@@ -128,8 +136,7 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 무효·만료 코드 → 404 INVALID_RECIPIENT_CODE")
     void signup_invalidCode() {
-        given(userRepository.existsByEmail("old@b.com")).willReturn(false);
-        given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG")).willReturn(Optional.empty());
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> careRecipientAuthService.signup(REQUEST))
                 .isInstanceOf(BusinessException.class)
@@ -141,8 +148,7 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 노인이 삭제된 경우 → 404 INVALID_RECIPIENT_CODE")
     void signup_careTargetGone() {
-        given(userRepository.existsByEmail("old@b.com")).willReturn(false);
-        given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
                 .willReturn(Optional.of(new RecipientCodePayload(99L, 1L)));
         given(careTargetRepository.findById(99L)).willReturn(Optional.empty());
 
@@ -156,6 +162,8 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 연결된 계정이 노인이 아니면 거부 — 연결코드로 보호자 세션이 나오면 권한 상승이다")
     void signup_relinkRejectsNonRecipientAccount() {
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
                 .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         CareTarget ct = careTarget(45L);
@@ -176,6 +184,8 @@ class CareRecipientAuthServiceTest {
     @Test
     @DisplayName("signup: 이미 연결된 노인은 기존 계정으로 재연결된다 — 로그아웃 복구 경로")
     void signup_alreadyLinked_relinks() {
+        given(inviteCodeStore.findRecipientCode("RC3DE7FG"))
+                .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
         given(inviteCodeStore.findAndDeleteRecipientCode("RC3DE7FG"))
                 .willReturn(Optional.of(new RecipientCodePayload(45L, 1L)));
 
@@ -186,6 +196,9 @@ class CareRecipientAuthServiceTest {
         User existing = User.create("old@b.com", "hash", "박순자", Role.CARE_RECIPIENT);
         ReflectionTestUtils.setField(existing, "id", 8L);
         given(userRepository.findById(8L)).willReturn(Optional.of(existing));
+        // 재연결은 기존 계정을 그대로 쓰므로 이메일은 **항상 중복**이다.
+        // 중복 검사가 분기보다 먼저 돌면 복구 경로가 통째로 막힌다.
+        lenient().when(userRepository.existsByEmail(anyString())).thenReturn(true);
         given(jwtTokenProvider.createAccessToken(8L, "CARE_RECIPIENT")).willReturn("access");
         given(jwtTokenProvider.createRefreshToken(8L, "CARE_RECIPIENT")).willReturn("refresh");
 

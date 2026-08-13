@@ -122,8 +122,9 @@ class EscalationSelfResponseTest {
         assertThat(existing.getResponseDetail())
                 .containsEntry("response_result", "USER_OK")
                 .containsEntry("channel", "app_button");
-        // AI가 기록한 실행 시각은 보존한다
+        // AI가 기록한 실행 시각과 detail은 보존한다 — 통째로 덮어쓰면 무슨 말을 걸었는지가 사라진다
         assertThat(existing.getExecutedAt()).isEqualTo(Instant.parse("2026-08-13T03:22:05Z"));
+        assertThat(existing.getResponseDetail()).containsEntry("prompt", "괜찮으세요?");
         then(escalationStepRepository).should(never()).save(any());
     }
 
