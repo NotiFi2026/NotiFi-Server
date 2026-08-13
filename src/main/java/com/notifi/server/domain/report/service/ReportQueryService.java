@@ -45,7 +45,8 @@ public class ReportQueryService {
     /** P1 — 노인별 리포트 목록. */
     @Transactional(readOnly = true)
     public PageResponse<DailyReportSummaryResponse> getReports(Long userId, Long careTargetId, Pageable pageable) {
-        careTargetAccessValidator.requireRelationship(userId, careTargetId);
+        // 노인 본인도 자기 리포트를 본다
+        careTargetAccessValidator.requireRelationshipOrSelf(userId, careTargetId);
         return PageResponse.from(dailyReportRepository.findSummaries(careTargetId, pageable));
     }
 
@@ -54,7 +55,7 @@ public class ReportQueryService {
     public DailyReportDetailResponse getReport(Long userId, Long dailyReportId) {
         DailyReport report = dailyReportRepository.findById(dailyReportId)
                 .orElseThrow(() -> new BusinessException(ReportErrorCode.REPORT_NOT_FOUND));
-        careTargetAccessValidator.requireRelationship(userId, report.getCareTargetId());
+        careTargetAccessValidator.requireRelationshipOrSelf(userId, report.getCareTargetId());
         return DailyReportDetailResponse.of(report);
     }
 

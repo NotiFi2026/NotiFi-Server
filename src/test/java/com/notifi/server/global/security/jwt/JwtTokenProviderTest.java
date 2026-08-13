@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JwtTokenProviderTest {
 
     private final JwtTokenProvider provider = new JwtTokenProvider(
-            "test-secret-key-at-least-32-bytes-long-for-hs256!", 3600, 604800);
+            "test-secret-key-at-least-32-bytes-long-for-hs256!", 3600, 604800, 7776000);
 
     @Test
     @DisplayName("액세스 토큰 → getAuthentication 으로 userId·role 추출")
@@ -65,5 +65,21 @@ class JwtTokenProviderTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(CommonErrorCode.INVALID_CREDENTIALS);
+    }
+
+    @Test
+    @DisplayName("노인 리프레시 수명이 보호자보다 길다 — 끊기면 스스로 못 돌아오기 때문")
+    void recipientRefreshLivesLonger() {
+        long guardian = provider.refreshTokenTtlFor("GUARDIAN");
+        long recipient = provider.refreshTokenTtlFor("CARE_RECIPIENT");
+
+        assertThat(recipient).isGreaterThan(guardian);
+    }
+
+    @Test
+    @DisplayName("알 수 없는 역할은 보호자 기본값 — 새 역할이 조용히 긴 수명을 얻으면 안 된다")
+    void unknownRoleFallsBackToDefault() {
+        assertThat(provider.refreshTokenTtlFor("SOCIAL_WORKER"))
+                .isEqualTo(provider.refreshTokenTtlFor("GUARDIAN"));
     }
 }

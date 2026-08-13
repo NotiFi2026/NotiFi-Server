@@ -104,7 +104,8 @@ public class SensingQueryService {
             EventType eventType, Instant from, Instant to,
             Pageable pageable) {
 
-        accessValidator.requireRelationship(userId, careTargetId);
+        // 노인 본인도 자기 기록을 본다 — 자기 데이터에 대한 접근권은 보호자보다 강하다
+        accessValidator.requireRelationshipOrSelf(userId, careTargetId);
 
         Page<SensingEvent> page = sensingEventRepository
                 .findEvents(careTargetId, eventType, from, to, pageable);
@@ -131,7 +132,7 @@ public class SensingQueryService {
     public PoseClipResponse getPoseClip(Long userId, Long sensingEventId) {
         SensingEvent event = sensingEventRepository.findById(sensingEventId)
                 .orElseThrow(() -> new BusinessException(SensingErrorCode.SENSING_EVENT_NOT_FOUND));
-        accessValidator.requireRelationship(userId, event.getCareTargetId());
+        accessValidator.requireRelationshipOrSelf(userId, event.getCareTargetId());
         PoseClip clip = poseClipRepository.findBySensingEventId(sensingEventId)
                 .orElseThrow(() -> new BusinessException(SensingErrorCode.POSE_CLIP_NOT_FOUND));
         return PoseClipResponse.from(clip);

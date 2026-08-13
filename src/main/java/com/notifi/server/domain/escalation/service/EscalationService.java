@@ -32,7 +32,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -111,7 +114,8 @@ public class EscalationService {
     @Transactional(readOnly = true)
     public PageResponse<EscalationSummaryResponse> listEscalations(
             Long userId, Long careTargetId, Pageable pageable) {
-        accessValidator.requireRelationship(userId, careTargetId);
+        // 노인 본인도 자기 응급 이력을 본다
+        accessValidator.requireRelationshipOrSelf(userId, careTargetId);
         Page<EscalationSummaryResponse> page =
                 escalationRepository.findByCareTargetId(careTargetId, pageable)
                         .map(EscalationSummaryResponse::from);
@@ -124,7 +128,7 @@ public class EscalationService {
         Escalation escalation = escalationRepository.findById(escalationId)
                 .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
         SensingEvent event = resolveSensingEvent(escalation);
-        accessValidator.requireRelationship(userId, event.getCareTargetId());
+        accessValidator.requireRelationshipOrSelf(userId, event.getCareTargetId());
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return buildDetail(escalation, steps, event);
@@ -152,6 +156,75 @@ public class EscalationService {
         List<EscalationStep> steps =
                 escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
         return buildDetail(escalation, steps, event);
+    }
+
+    // ── E4: 노인 본인 "괜찮아요" ──────────────────────────────────────────────
+    /**
+     * 노인이 앱에서 직접 안전을 알린다 — 음성 확인이 안 될 때의 대안 경로.
+     *
+     * <p>E3(보호자 해제)를 열어 주지 않는 이유: {@code GUARDIAN_HANDLED}·{@code FALSE_ALARM}은
+     * <b>보호자가 상황을 판단했다는 의미</b>다. 노인이 "괜찮다"고 하는 것은 그것과 다르고,
+     * 시스템에 이미 대응하는 개념이 있다 — 음성 확인이 USER_OK를 받았을 때의 {@code SELF_RESOLVED}.
+     * 같은 결과로 모아 두면 "노인이 스스로 괜찮다고 했다"가 어느 경로로 들어오든 한 가지로 읽힌다.
+     *
+     * <p>보호자는 이 경로를 쓸 수 없다 — 남이 대신 눌러 주면 자기응답의 의미가 사라진다.
+     */
+    @Transactional
+    public EscalationDetailResponse selfConfirmSafe(Long userId, Long escalationId) {
+        // 행 잠금 — recordStep(I2)·resolve(E3)와 직렬화. 음성 응답과 버튼이 동시에 들어와도 한쪽만 이긴다
+        Escalation escalation = escalationRepository.findByIdForUpdate(escalationId)
+                .orElseThrow(() -> new BusinessException(EscalationErrorCode.ESCALATION_NOT_FOUND));
+        SensingEvent event = resolveSensingEvent(escalation);
+        accessValidator.requireSelf(userId, event.getCareTargetId());
+
+        if (escalation.getStatus() != EscalationStatus.IN_PROGRESS) {
+            throw new BusinessException(EscalationErrorCode.ESCALATION_ALREADY_RESOLVED);
+        }
+
+        recordSelfResponseStep(escalationId);
+        escalation.resolve(ResolutionType.SELF_RESOLVED, "노인 본인 앱 응답 자동 해소");
+
+        List<EscalationStep> steps =
+                escalationStepRepository.findByEscalationIdOrderByStepOrderAsc(escalationId);
+        return buildDetail(escalation, steps, event);
+    }
+
+    /**
+     * 응답 사실을 단계 기록에 남긴다.
+     *
+     * <p>해소만 하고 단계를 안 남기면 보호자가 응급 상세를 열었을 때 "음성 확인 실행됨" 다음에
+     * 아무 흔적 없이 해소돼 있다. 음성으로 USER_OK를 받은 경우({@code recordStep})는 RESPONDED
+     * 단계를 남기므로, 같은 사건인데 경로에 따라 기록이 달라진다. <b>응급 이력에서 누가 언제
+     * 어떻게 응답했는지는 남아야 한다.</b>
+     *
+     * <p>{@code step_type}은 CHECK 제약이 3종뿐이라 {@code VOICE_CHECK}를 재사용하고,
+     * 음성인지 버튼인지는 {@code response_detail.channel}로 구분한다.
+     * {@code UNIQUE(escalation_id, step_type)} 때문에 <b>있으면 갱신, 없으면 생성</b>한다 —
+     * AI가 음성 확인을 이미 EXECUTED로 기록해 둔 상태가 정상 경로다.
+     */
+    private void recordSelfResponseStep(Long escalationId) {
+        Instant now = Instant.now();
+
+        escalationStepRepository.findByEscalationIdAndStepType(escalationId, StepType.VOICE_CHECK)
+                .ifPresentOrElse(
+                        // 기존 detail을 덮어쓰지 않고 병합한다 — 통째로 갈아치우면 AI가 남긴
+                        // TTS 프롬프트·언어 같은 실행 기록이 사라진다. 실행 시각도 보존한다.
+                        step -> step.updateProgress(StepStatus.RESPONDED, step.getExecutedAt(), now,
+                                mergeResponseDetail(step.getResponseDetail())),
+                        () -> escalationStepRepository.save(EscalationStep.record(
+                                escalationId, StepType.VOICE_CHECK, (short) 1,
+                                StepStatus.RESPONDED, now, now, mergeResponseDetail(null)))
+                );
+    }
+
+    private Map<String, Object> mergeResponseDetail(Map<String, Object> existing) {
+        Map<String, Object> merged = existing != null
+                ? new LinkedHashMap<>(existing)
+                : new LinkedHashMap<>();
+        merged.put("response_result", "USER_OK");
+        // 음성으로 답했는지 버튼을 눌렀는지 구분이 남아야 한다
+        merged.put("channel", "app_button");
+        return merged;
     }
 
     // ── private ───────────────────────────────────────────────────────────────

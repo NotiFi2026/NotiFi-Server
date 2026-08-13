@@ -36,6 +36,10 @@ jwt:
   secret: ${JWT_SECRET:notifi-secret-key-for-local-dev-only-change-in-prod!}
   access-token-ttl: ${JWT_ACCESS_TTL:3600}
   refresh-token-ttl: ${JWT_REFRESH_TTL:604800}
+  # 노인 계정 전용. 보호자는 로그아웃돼도 이메일·비밀번호로 다시 들어오지만,
+  # 노인은 그 자격증명을 모르는 것이 정상이라 세션이 끊기면 보호자가 연결코드를
+  # 새로 발급해 줄 때까지 음성 확인에 응답할 수 없다. 기본 90일.
+  recipient-refresh-token-ttl: ${JWT_RECIPIENT_REFRESH_TTL:7776000}
 
 internal:
   api-key: ${INTERNAL_API_KEY:change-me-before-deploy}

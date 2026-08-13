@@ -3,6 +3,7 @@ package com.notifi.server.domain.auth.service;
 import com.notifi.server.domain.auth.dto.*;
 import com.notifi.server.domain.auth.token.RefreshTokenStore;
 import com.notifi.server.domain.auth.exception.AuthErrorCode;
+import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import com.notifi.server.global.security.jwt.JwtTokenProvider;
@@ -31,6 +32,7 @@ class AuthServiceTest {
     @Mock PasswordEncoder passwordEncoder;
     @Mock JwtTokenProvider jwtTokenProvider;
     @Mock RefreshTokenStore refreshTokenStore;
+    @Mock FcmTokenRepository fcmTokenRepository;
 
     @InjectMocks AuthService authService;
 
@@ -100,7 +102,7 @@ class AuthServiceTest {
         assertThat(resp.accessToken()).isEqualTo("access");
         assertThat(resp.refreshToken()).isEqualTo("refresh");
         assertThat(resp.user().name()).isEqualTo("김보호");
-        then(refreshTokenStore).should().save(eq(1L), eq("refresh"));
+        then(refreshTokenStore).should().save(eq(1L), eq("refresh"), eq("GUARDIAN"));
     }
 
     @Test
@@ -158,7 +160,7 @@ class AuthServiceTest {
 
         assertThat(resp.accessToken()).isEqualTo("new-access");
         assertThat(resp.refreshToken()).isEqualTo("new-refresh");
-        then(refreshTokenStore).should().save(1L, "new-refresh");
+        then(refreshTokenStore).should().save(1L, "new-refresh", "GUARDIAN");
     }
 
     @Test
@@ -217,9 +219,13 @@ class AuthServiceTest {
     // ── logout ────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("logout: RefreshTokenStore.delete 호출")
-    void logout_deletesToken() {
+    @DisplayName("logout: 리프레시 토큰과 FCM 토큰을 함께 지운다")
+    void logout_deletesTokens() {
         authService.logout(1L);
+
         then(refreshTokenStore).should().delete(1L);
+        // FCM 토큰을 남기면 로그아웃된 폰에 푸시가 계속 나가고 서버는 성공으로 기록한다 —
+        // 노인 폰에선 음성 확인 알림이 떠도 응답할 수 없어 아무도 실패를 모른다
+        then(fcmTokenRepository).should().deleteByUserId(1L);
     }
 }

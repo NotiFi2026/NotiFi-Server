@@ -44,6 +44,27 @@ public class CareTargetAccessValidator {
         }
     }
 
+    /**
+     * 노인 본인만 허용 — 보호자도 막는다.
+     *
+     * <p>"본인이 직접 괜찮다고 했다"가 성립해야 하는 경로에 쓴다. 보호자가 대신 눌러 줄 수 있으면
+     * 그 의미가 사라지고, 보호자에겐 이미 자기 이름으로 해제하는 경로(E3)가 따로 있다.
+     *
+     * <p><b>보장 범위</b>: 이것이 막는 것은 "보호자가 <i>자기 세션으로</i> 대신 누르는 것"이지
+     * "보호자가 절대 못 하는 것"이 아니다. 주 보호자는 연결코드(R5)를 발급해 노인 세션을 얻을 수
+     * 있다. 그래도 두는 이유는 주 보호자가 애초에 그 계정을 만들어 준 주체이고, 우회해서 얻는 것이
+     * {@code resolution_type} 라벨 차이뿐이기 때문이다 — 이를 막으려면 노인의 유일한 복구 경로를
+     * 없애야 하는데 그게 훨씬 나쁜 거래다.
+     */
+    public void requireSelf(Long userId, Long careTargetId) {
+        Long linkedUserId = careTargetRepository.findById(careTargetId)
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
+                .getUserId();
+        if (!userId.equals(linkedUserId)) {
+            throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
+        }
+    }
+
     /** 보호자 관계 또는 노인 본인(care_target.user_id == userId) 허용. */
     public void requireRelationshipOrSelf(Long userId, Long careTargetId) {
         if (careRelationshipRepository.existsByUserIdAndCareTargetId(userId, careTargetId)) {

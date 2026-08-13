@@ -1,5 +1,6 @@
 package com.notifi.server.global.security.jwt;
 
+import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.global.exception.BusinessException;
 import com.notifi.server.global.exception.CommonErrorCode;
 import io.jsonwebtoken.Claims;
@@ -35,17 +36,20 @@ public class JwtTokenProvider {
     private static final String TYPE_REFRESH = "refresh";
 
     private final SecretKey signingKey;
-    private final long accessTtl;    // seconds
-    private final long refreshTtl;   // seconds
+    private final long accessTtl;             // seconds
+    private final long refreshTtl;            // seconds
+    private final long recipientRefreshTtl;   // seconds
 
     public JwtTokenProvider(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.access-token-ttl}") long accessTtl,
-            @Value("${jwt.refresh-token-ttl}") long refreshTtl
+            @Value("${jwt.refresh-token-ttl}") long refreshTtl,
+            @Value("${jwt.recipient-refresh-token-ttl}") long recipientRefreshTtl
     ) {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessTtl = accessTtl;
         this.refreshTtl = refreshTtl;
+        this.recipientRefreshTtl = recipientRefreshTtl;
     }
 
     public String createAccessToken(Long userId, String role) {
@@ -53,7 +57,19 @@ public class JwtTokenProvider {
     }
 
     public String createRefreshToken(Long userId, String role) {
-        return buildToken(userId, role, refreshTtl, TYPE_REFRESH);
+        return buildToken(userId, role, refreshTokenTtlFor(role), TYPE_REFRESH);
+    }
+
+    /**
+     * 역할별 리프레시 수명. 노인은 훨씬 길게 잡는다.
+     *
+     * <p>보호자는 로그아웃돼도 이메일·비밀번호로 다시 들어오면 된다. 노인은 그 자격증명을
+     * 모르는 것이 정상이라(보호자가 만들어 준다) 세션이 끊기면 <b>보호자가 연결코드를 새로
+     * 발급해 줄 때까지 아무것도 못 한다.</b> 그동안 음성 확인 푸시를 받아도 응답할 수 없어
+     * 낙상 오탐이 그대로 119까지 올라간다. 애초에 끊기지 않게 하는 것이 첫 방어선이다.
+     */
+    public long refreshTokenTtlFor(String role) {
+        return Role.CARE_RECIPIENT.name().equals(role) ? recipientRefreshTtl : refreshTtl;
     }
 
     /**

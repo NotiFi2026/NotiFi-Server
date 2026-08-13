@@ -330,7 +330,7 @@ class EscalationServiceTest {
     @DisplayName("listEscalations: 관계 없음(노인 존재) → ACCESS_DENIED")
     void listEscalations_noRelationship_accessDenied() {
         willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
-                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
+                .given(accessValidator).requireRelationshipOrSelf(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.listEscalations(USER_ID, CARE_TARGET_ID, PageRequest.of(0, 20)))
                 .isInstanceOf(BusinessException.class)
@@ -342,7 +342,7 @@ class EscalationServiceTest {
     @DisplayName("listEscalations: 관계 없음(노인 미존재) → CARE_TARGET_NOT_FOUND")
     void listEscalations_careTargetNotFound() {
         willThrow(new BusinessException(CareTargetErrorCode.CARE_TARGET_NOT_FOUND))
-                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
+                .given(accessValidator).requireRelationshipOrSelf(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.listEscalations(USER_ID, CARE_TARGET_ID, PageRequest.of(0, 20)))
                 .isInstanceOf(BusinessException.class)
@@ -405,7 +405,7 @@ class EscalationServiceTest {
         given(riskAssessmentRepository.findById(any())).willReturn(Optional.of(makeRiskAssessment()));
         given(sensingEventRepository.findById(any())).willReturn(Optional.of(makeEvent(CARE_TARGET_ID)));
         willThrow(new BusinessException(CommonErrorCode.ACCESS_DENIED))
-                .given(accessValidator).requireRelationship(USER_ID, CARE_TARGET_ID);
+                .given(accessValidator).requireRelationshipOrSelf(USER_ID, CARE_TARGET_ID);
 
         assertThatThrownBy(() -> escalationService.getDetail(USER_ID, 31L))
                 .isInstanceOf(BusinessException.class)

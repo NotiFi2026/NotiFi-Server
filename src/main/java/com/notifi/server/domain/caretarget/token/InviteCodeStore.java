@@ -53,6 +53,24 @@ public class InviteCodeStore {
         }
     }
 
+    /**
+     * 노인 연결코드를 유지한 채 페이로드만 조회.
+     *
+     * <p>소비 전에 신규 가입인지 재연결인지 갈라야 하기 때문에 필요하다 — 그걸 모르면
+     * 재연결에도 이메일 중복 검사가 걸리고, 반대로 검사를 뒤로 미루면 흔한 실패에
+     * 단발 코드가 타 버린다. 실제 소비는 {@link #findAndDeleteRecipientCode}가 원자적으로 하므로
+     * 이 조회가 코드를 재사용 가능하게 만들지는 않는다.
+     */
+    public Optional<RecipientCodePayload> findRecipientCode(String code) {
+        String json = redisTemplate.opsForValue().get(RECIPIENT_KEY_PREFIX + code);
+        if (json == null) return Optional.empty();
+        try {
+            return Optional.of(objectMapper.readValue(json, RecipientCodePayload.class));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
     /** Redis TTL 기반 실제 만료시각 반환 — 미리보기용. */
     public Optional<Instant> expiresAt(String code) {
         Long ttl = redisTemplate.getExpire(key(code), TimeUnit.SECONDS);

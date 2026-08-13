@@ -10,6 +10,7 @@ import com.notifi.server.domain.caretarget.exception.RelationshipErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
+import com.notifi.server.domain.notification.repository.FcmTokenRepository;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -21,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Locale;
 
 /**
@@ -37,29 +40,85 @@ public class CareRecipientAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
+    private final FcmTokenRepository fcmTokenRepository;
 
+    /** 서버 생성 이메일의 도메인. 실제 수신 가능한 주소와 절대 충돌하지 않도록 예약 도메인을 쓴다. */
+    private static final String GENERATED_EMAIL_DOMAIN = "@care.notifi.internal";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * 연결코드로 노인 세션을 연다 — 최초 가입과 재연결을 같은 경로로 처리한다.
+     *
+     * <p>재연결이 필요한 이유: 노인은 이메일·비밀번호를 모르는 것이 정상이라(보호자가 만들어 준다)
+     * 앱 재설치·기기 교체·장기 미사용으로 세션이 끊기면 <b>스스로 돌아올 방법이 없다.</b>
+     * 비밀번호 재설정 경로도 없어서 지금까지는 보호자가 직접 찾아가야 복구됐다.
+     *
+     * <p>연결코드는 단발·24시간·주 보호자만 발급이라 최초 가입과 신뢰 모델이 같다.
+     * 즉 재연결을 허용해도 보안 등급이 내려가지 않는다.
+     */
     @Transactional
     public RecipientSignupResponse signup(RecipientSignupRequest request) {
-        String email = request.email().toLowerCase(Locale.ROOT);
+        // 소비 전에 먼저 들여다본다. 신규 가입인지 재연결인지를 알아야 검사할 것이 갈린다 —
+        // 재연결에는 이메일 검사를 하면 안 되고(기존 계정을 그대로 쓰므로 항상 중복이다),
+        // 신규에는 검사를 코드 소비보다 먼저 해야 흔한 실패로 단발 코드가 타지 않는다.
+        RecipientCodePayload peeked = inviteCodeStore.findRecipientCode(request.code())
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
 
-        // 코드 소모(findAndDelete) 전에 가장 흔한 실패를 먼저 걸러낸다
-        if (userRepository.existsByEmail(email)) {
+        CareTarget peekedTarget = careTargetRepository.findById(peeked.careTargetId())
+                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
+        boolean isRelink = peekedTarget.getUserId() != null;
+
+        if (!isRelink && request.email() != null && !request.email().isBlank()
+                && userRepository.existsByEmail(request.email().toLowerCase(Locale.ROOT))) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
+        // 실제 소비는 여기서 원자적으로 한다 — 위 조회가 코드를 재사용 가능하게 만들지 않는다.
+        // 같은 코드로 동시에 들어오면 getAndDelete가 한쪽만 통과시킨다.
         RecipientCodePayload payload = inviteCodeStore.findAndDeleteRecipientCode(request.code())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
 
         CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_RECIPIENT_CODE));
-        if (careTarget.getUserId() != null) {
+
+        User user = careTarget.getUserId() != null
+                ? relink(careTarget)
+                : createAndLink(careTarget, request);
+
+        return issueSession(user, careTarget.getId());
+    }
+
+    /** 이미 연결된 노인 — 기존 계정 그대로 새 세션을 연다. 요청의 자격증명 필드는 무시한다. */
+    private User relink(CareTarget careTarget) {
+        User user = userRepository.findById(careTarget.getUserId())
+                // 노인 계정이 사라졌는데 careTarget이 연결을 붙들고 있는 상태 — 코드로는 복구 불가
+                .orElseThrow(() -> new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED));
+
+        // 연결된 계정이 노인이 아니면 거부한다. 지금은 linkUser 호출부가 하나뿐이라 항상
+        // CARE_RECIPIENT지만, 다른 곳에서 linkUser를 부르는 날 이 코드가 그대로면
+        // **연결코드로 보호자 세션이 발급되는 권한 상승**이 된다. 인증 경로에서
+        // "지금은 괜찮다"에 기대면 안 된다.
+        if (user.getRole() != Role.CARE_RECIPIENT) {
             throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
         }
+        return user;
+    }
+
+    private User createAndLink(CareTarget careTarget, RecipientSignupRequest request) {
+        String email = resolveEmail(request.email(), careTarget.getId());
+        if (userRepository.existsByEmail(email)) {
+            throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+
+        String rawPassword = request.password() != null ? request.password() : randomPassword();
+        String name = request.name() != null && !request.name().isBlank()
+                ? request.name()
+                : careTarget.getName();
 
         User user;
         try {
             user = userRepository.save(User.create(
-                    email, passwordEncoder.encode(request.password()), request.name(), Role.CARE_RECIPIENT));
+                    email, passwordEncoder.encode(rawPassword), name, Role.CARE_RECIPIENT));
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
         }
@@ -71,13 +130,42 @@ public class CareRecipientAuthService {
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(CareTargetErrorCode.CARE_TARGET_ALREADY_LINKED);
         }
+        return user;
+    }
 
+    private RecipientSignupResponse issueSession(User user, Long careTargetId) {
         String role = user.getRole().name();
         String accessToken = jwtTokenProvider.createAccessToken(user.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getId(), role);
-        refreshTokenStore.save(user.getId(), refreshToken);
+        // 기존 세션은 교체된다 — 한 계정 한 세션
+        refreshTokenStore.save(user.getId(), refreshToken, role);
+
+        // 옛 기기의 FCM 토큰도 함께 정리한다. 세션만 교체하고 토큰을 남기면 기기를 바꿔
+        // 재연결했을 때 **옛 폰에도 음성 확인 푸시가 계속 가고 서버는 성공으로 기록한다** —
+        // 그 폰은 액세스 토큰이 만료되는 순간 응답할 수 없게 되므로 로그아웃 때와 같은 유령 상태다.
+        // 새 기기는 세션을 연 뒤 N3로 자기 토큰을 등록한다(앱 계약).
+        fcmTokenRepository.deleteByUserId(user.getId());
+
         user.recordLogin();
 
-        return RecipientSignupResponse.of(accessToken, refreshToken, user, careTarget.getId());
+        return RecipientSignupResponse.of(accessToken, refreshToken, user, careTargetId);
+    }
+
+    /** 생략 시 노인별로 결정적인 내부 주소를 만든다 — 보호자가 가짜 이메일을 지어낼 필요가 없다. */
+    private String resolveEmail(String requested, Long careTargetId) {
+        if (requested != null && !requested.isBlank()) {
+            return requested.toLowerCase(Locale.ROOT);
+        }
+        return "recipient-" + careTargetId + GENERATED_EMAIL_DOMAIN;
+    }
+
+    /**
+     * 아무도 모르는 비밀번호. 노인 계정의 로그인 경로는 연결코드 하나뿐이므로 이 값은 쓰이지 않는다 —
+     * {@code password_hash}가 NOT NULL이고, 빈 값을 넣으면 빈 비밀번호로 로그인이 뚫린다.
+     */
+    private String randomPassword() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }
