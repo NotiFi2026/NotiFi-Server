@@ -38,6 +38,7 @@ out/
 ### Project docs & context (GitHub 비공개) ###
 docs/
 CLAUDE.md
+AGENTS.md
 
 ### Env ###
 .env
