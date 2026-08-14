@@ -24,7 +24,8 @@ public class NotificationQueryService {
             Long userId, NotificationCategory category, boolean unreadOnly, Pageable pageable) {
         return PageResponse.from(
                 notificationRepository.findMyNotifications(userId, category, unreadOnly, pageable)
-                        .map(NotificationResponse::from)
+                        // [Notification, escalationId] — 조인 근거는 리포지터리 주석 참고
+                        .map(row -> NotificationResponse.from((Notification) row[0], (Long) row[1]))
         );
     }
 

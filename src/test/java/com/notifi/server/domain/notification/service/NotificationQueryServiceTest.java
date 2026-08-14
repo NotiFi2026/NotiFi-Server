@@ -43,7 +43,7 @@ class NotificationQueryServiceTest {
     void getNotifications_success_returnsMappedPage() {
         Notification n = notification(3L, 1L, 45L, NotificationCategory.EMERGENCY, false);
         given(notificationRepository.findMyNotifications(1L, null, false, Pageable.unpaged()))
-                .willReturn(new PageImpl<>(List.of(n)));
+                .willReturn(new PageImpl<>(List.<Object[]>of(row(n, 43L))));
 
         PageResponse<NotificationResponse> result =
                 notificationQueryService.getNotifications(1L, null, false, Pageable.unpaged());
@@ -58,11 +58,40 @@ class NotificationQueryServiceTest {
     }
 
     @Test
+    @DisplayName("getNotifications: 응급 알림은 조인해 온 escalation_id를 싣는다 (앱 딥링크의 유일한 열쇠)")
+    void getNotifications_emergency_carriesEscalationId() {
+        Notification n = notification(3L, 1L, 45L, NotificationCategory.EMERGENCY, false);
+        given(notificationRepository.findMyNotifications(1L, null, false, Pageable.unpaged()))
+                .willReturn(new PageImpl<>(List.<Object[]>of(row(n, 43L))));
+
+        NotificationResponse dto = notificationQueryService
+                .getNotifications(1L, null, false, Pageable.unpaged())
+                .content().get(0);
+
+        assertThat(dto.escalationId()).isEqualTo(43L);
+    }
+
+    @Test
+    @DisplayName("getNotifications: 응급이 아닌 알림은 step이 없어 escalation_id도 null")
+    void getNotifications_nonEmergency_escalationIdNull() {
+        Notification n = notification(7L, 1L, 45L, NotificationCategory.DAILY_REPORT, false);
+        given(notificationRepository.findMyNotifications(1L, null, false, Pageable.unpaged()))
+                .willReturn(new PageImpl<>(List.<Object[]>of(row(n, null))));
+
+        NotificationResponse dto = notificationQueryService
+                .getNotifications(1L, null, false, Pageable.unpaged())
+                .content().get(0);
+
+        assertThat(dto.escalationId()).isNull();
+        assertThat(dto.escalationStepId()).isNull();
+    }
+
+    @Test
     @DisplayName("getNotifications: category·unread_only 파라미터가 리포지토리로 전달된다")
     void getNotifications_filtersPassedToRepository() {
         given(notificationRepository.findMyNotifications(
                 eq(1L), eq(NotificationCategory.EMERGENCY), eq(true), any(Pageable.class)))
-                .willReturn(new PageImpl<>(List.of()));
+                .willReturn(new PageImpl<>(List.<Object[]>of()));
 
         notificationQueryService.getNotifications(1L, NotificationCategory.EMERGENCY, true, Pageable.unpaged());
 
@@ -75,7 +104,7 @@ class NotificationQueryServiceTest {
     void getNotifications_readNotification_isReadTrue() {
         Notification n = notification(5L, 1L, 45L, NotificationCategory.SYSTEM, true);
         given(notificationRepository.findMyNotifications(1L, null, false, Pageable.unpaged()))
-                .willReturn(new PageImpl<>(List.of(n)));
+                .willReturn(new PageImpl<>(List.<Object[]>of(row(n, null))));
 
         NotificationResponse dto = notificationQueryService
                 .getNotifications(1L, null, false, Pageable.unpaged())
@@ -136,6 +165,11 @@ class NotificationQueryServiceTest {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
+
+    /** N1 리포지터리가 주는 [Notification, escalationId] 쌍 — step 조인 결과다. */
+    private Object[] row(Notification n, Long escalationId) {
+        return new Object[]{n, escalationId};
+    }
 
     private Notification notification(Long id, Long recipientUserId, Long careTargetId,
                                       NotificationCategory category, boolean alreadyRead) {
