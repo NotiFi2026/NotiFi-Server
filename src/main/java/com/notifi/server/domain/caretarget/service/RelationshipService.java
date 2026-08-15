@@ -9,6 +9,7 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.InviteCodeProbeThrottle;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
@@ -34,6 +35,7 @@ public class RelationshipService {
     private final CareTargetRepository careTargetRepository;
     private final UserRepository userRepository;
     private final InviteCodeStore inviteCodeStore;
+    private final InviteCodeProbeThrottle inviteCodeProbeThrottle;
     private final CareTargetAccessValidator accessValidator;
 
     @Value("${invite.link-base-url}")
@@ -82,10 +84,26 @@ public class RelationshipService {
 
     // ── R1-c: 초대코드 미리보기 (코드 유지) ────────────────────────────────────
 
+    /**
+     * 코드를 소모하지 않으므로 <b>프로빙 제한이 필요하다</b> — 무제한으로 시도하면 유효한 코드를
+     * 찾아낼 수 있고, 성공하면 노인 이름·초대자 이름이 노출된다. 실패한 조회만 세므로
+     * 링크를 정상적으로 받은 사용자는 걸리지 않는다.
+     */
     @Transactional(readOnly = true)
-    public InvitePreviewResponse previewInviteCode(String code) {
-        InviteCodePayload payload = inviteCodeStore.find(code)
-                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+    public InvitePreviewResponse previewInviteCode(Long userId, String code) {
+        if (inviteCodeProbeThrottle.isBlocked(userId)) {
+            throw new BusinessException(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+        }
+
+        InviteCodePayload payload = inviteCodeStore.find(code).orElse(null);
+        if (payload == null) {
+            inviteCodeProbeThrottle.recordFailure(userId);
+            throw new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE);
+        }
+        // 코드를 맞혔다 — 아래에서 어떤 이유로 실패하든 무차별 시도는 아니다.
+        // 노인이 지워진 링크를 확인했다는 이유로 이전 실패 횟수가 남으면,
+        // 그 사용자는 다음 오타 한 번에 차단된다
+        inviteCodeProbeThrottle.reset(userId);
 
         CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
@@ -102,6 +120,10 @@ public class RelationshipService {
 
     // ── R1-b: 초대코드 수락 ──────────────────────────────────────────────────
 
+    /**
+     * <p>미리보기(R1-c)와 <b>같은 프로빙 제한을 공유한다.</b> 여기를 열어 두면 방어가 없는 것과
+     * 같다 — 공격자는 이름만 얻는 미리보기 대신 곧장 보호자가 되는 이쪽을 시도한다.
+     */
     @Transactional
     public InviteCodeAcceptResponse acceptInviteCode(Long userId, String code) {
         // 노인 계정은 보호자가 될 수 없다 — 코드 소모(findAndDelete) 전에 차단
@@ -110,9 +132,17 @@ public class RelationshipService {
         if (caller.getRole() == Role.CARE_RECIPIENT) {
             throw new BusinessException(CommonErrorCode.ACCESS_DENIED);
         }
+        if (inviteCodeProbeThrottle.isBlocked(userId)) {
+            throw new BusinessException(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+        }
 
-        InviteCodePayload payload = inviteCodeStore.findAndDelete(code)
-                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+        InviteCodePayload payload = inviteCodeStore.findAndDelete(code).orElse(null);
+        if (payload == null) {
+            inviteCodeProbeThrottle.recordFailure(userId);
+            throw new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE);
+        }
+        // 코드를 맞혔다 — 아래에서 어떤 이유로 실패하든 무차별 시도는 아니다
+        inviteCodeProbeThrottle.reset(userId);
 
         CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));

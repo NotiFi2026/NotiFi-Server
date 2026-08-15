@@ -80,8 +80,18 @@ public class Notification {
         this.status = NotificationStatus.FAILED;
     }
 
+    /**
+     * 읽음은 {@code readAt}에만 기록한다 — {@code status}는 발송 결과(SENT/FAILED)의 자리다.
+     *
+     * <p>여기서 status를 READ로 덮으면 <b>전달 여부가 사라진다.</b> 응급 알림이 FCM 발송에
+     * 실패했더라도 보호자가 앱에서 그 알림을 한 번 열면 FAILED가 READ가 되고, 사후에
+     * "이 알림이 실제로 폰에 도달했나"를 되짚을 수 없다. 119까지 이어지는 흐름이라
+     * 그 기록은 남아야 한다.
+     *
+     * <p>읽음 여부 판정은 전부 {@code readAt} 기준이다(N1 unread 필터·{@code is_read} 파생).
+     * {@link NotificationStatus#READ}는 이 변경 이전에 쌓인 행이 갖고 있어 삭제하지 않는다.
+     */
     public void markRead() {
-        this.status = NotificationStatus.READ;
         this.readAt = Instant.now();
     }
 }

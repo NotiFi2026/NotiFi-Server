@@ -12,6 +12,7 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.InviteCodeProbeThrottle;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -46,6 +47,7 @@ class RelationshipServiceTest {
     @Mock CareTargetRepository careTargetRepository;
     @Mock UserRepository userRepository;
     @Mock InviteCodeStore inviteCodeStore;
+    @Mock InviteCodeProbeThrottle inviteCodeProbeThrottle;
     @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks RelationshipService relationshipService;
@@ -147,7 +149,7 @@ class RelationshipServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(inviter));
         given(inviteCodeStore.expiresAt("AB3CD7EF")).willReturn(Optional.of(expiresAt));
 
-        InvitePreviewResponse resp = relationshipService.previewInviteCode("AB3CD7EF");
+        InvitePreviewResponse resp = relationshipService.previewInviteCode(7L, "AB3CD7EF");
 
         assertThat(resp.careTargetId()).isEqualTo(45L);
         assertThat(resp.careTargetName()).isEqualTo("박순자");
@@ -155,30 +157,54 @@ class RelationshipServiceTest {
         assertThat(resp.relationshipType()).isEqualTo(RelationshipType.FAMILY);
         assertThat(resp.expiresAt()).isEqualTo(expiresAt);
         then(inviteCodeStore).should(never()).findAndDelete(any());
+        // 정상 사용자는 오타 몇 번이 다음 초대까지 따라가면 안 된다
+        then(inviteCodeProbeThrottle).should().reset(7L);
     }
 
     @Test
-    @DisplayName("previewInviteCode: 유효하지 않은 코드 → 404 INVALID_INVITE_CODE")
+    @DisplayName("previewInviteCode: 유효하지 않은 코드 → 404 INVALID_INVITE_CODE + 프로빙 1회 기록")
     void previewInviteCode_invalidCode() {
         given(inviteCodeStore.find("EXPIRED00")).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> relationshipService.previewInviteCode("EXPIRED00"))
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "EXPIRED00"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
+
+        then(inviteCodeProbeThrottle).should().recordFailure(7L);
     }
 
     @Test
-    @DisplayName("previewInviteCode: 노인이 삭제된 경우 → 404 INVALID_INVITE_CODE")
-    void previewInviteCode_careTargetGone() {
+    @DisplayName("previewInviteCode: 프로빙 제한 초과 → 429, 코드 조회조차 하지 않는다")
+    void previewInviteCode_throttled() {
+        // 미리보기는 코드를 소모하지 않아 무제한 시도가 가능하다.
+        // 맞히면 노인 이름·초대자 이름이 그대로 나간다
+        given(inviteCodeProbeThrottle.isBlocked(7L)).willReturn(true);
+
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "AB3CD7EF"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+
+        then(inviteCodeStore).should(never()).find(any());
+    }
+
+    @Test
+    @DisplayName("previewInviteCode: 노인이 삭제된 경우 → 404 INVALID_INVITE_CODE, 단 카운터는 초기화")
+    void previewInviteCode_careTargetGone_stillResetsCounter() {
+        // 코드는 맞힌 사람이다. 여기서 카운터를 남기면 9회 실패한 사용자가
+        // 유효하지만 삭제된 링크를 한 번 확인한 뒤 다음 오타 한 번에 차단된다
         InviteCodePayload payload = new InviteCodePayload(99L, RelationshipType.FAMILY, (short) 1, 1L);
         given(inviteCodeStore.find("AB3CD7EF")).willReturn(Optional.of(payload));
         given(careTargetRepository.findById(99L)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> relationshipService.previewInviteCode("AB3CD7EF"))
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "AB3CD7EF"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
+
+        then(inviteCodeProbeThrottle).should().reset(7L);
+        then(inviteCodeProbeThrottle).should(never()).recordFailure(any());
     }
 
     @Test
@@ -193,7 +219,7 @@ class RelationshipServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.empty());
         given(inviteCodeStore.expiresAt("AB3CD7EF")).willReturn(Optional.of(expiresAt));
 
-        InvitePreviewResponse resp = relationshipService.previewInviteCode("AB3CD7EF");
+        InvitePreviewResponse resp = relationshipService.previewInviteCode(7L, "AB3CD7EF");
 
         assertThat(resp.careTargetName()).isEqualTo("박순자");
         assertThat(resp.inviterName()).isNull();
@@ -231,7 +257,7 @@ class RelationshipServiceTest {
     }
 
     @Test
-    @DisplayName("acceptInviteCode: 만료·사용된 코드 → 404 INVALID_INVITE_CODE")
+    @DisplayName("acceptInviteCode: 만료·사용된 코드 → 404 INVALID_INVITE_CODE + 프로빙 1회 기록")
     void acceptInviteCode_invalidCode() {
         given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
         given(inviteCodeStore.findAndDelete("BADCODE0")).willReturn(Optional.empty());
@@ -240,6 +266,42 @@ class RelationshipServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
+
+        then(inviteCodeProbeThrottle).should().recordFailure(2L);
+    }
+
+    @Test
+    @DisplayName("acceptInviteCode: 프로빙 제한 초과 → 429, 코드를 소모하지 않는다")
+    void acceptInviteCode_throttled_codeNotConsumed() {
+        // 미리보기만 막으면 방어가 성립하지 않는다 — 여기를 맞히면 그 자리에서 보호자가 된다.
+        // 공격자가 이름만 얻는 쪽을 쓸 이유가 없다
+        given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
+        given(inviteCodeProbeThrottle.isBlocked(2L)).willReturn(true);
+
+        assertThatThrownBy(() -> relationshipService.acceptInviteCode(2L, "AB3CD7EF"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+
+        then(inviteCodeStore).should(never()).findAndDelete(any());
+    }
+
+    @Test
+    @DisplayName("acceptInviteCode: 이미 보호자여서 실패해도 프로빙으로 세지 않는다")
+    void acceptInviteCode_alreadyGuardian_isNotProbing() {
+        // 코드를 맞힌 사람이다. 링크를 두 번 눌렀다고 다음 초대까지 막히면 안 된다
+        InviteCodePayload payload = new InviteCodePayload(45L, RelationshipType.FAMILY, (short) 2, 1L);
+
+        given(userRepository.findById(2L)).willReturn(Optional.of(user(2L, "이보호")));
+        given(inviteCodeStore.findAndDelete("AB3CD7EF")).willReturn(Optional.of(payload));
+        given(careTargetRepository.findById(45L)).willReturn(Optional.of(careTarget(45L)));
+        given(careRelationshipRepository.existsByUserIdAndCareTargetId(2L, 45L)).willReturn(true);
+
+        assertThatThrownBy(() -> relationshipService.acceptInviteCode(2L, "AB3CD7EF"))
+                .isInstanceOf(BusinessException.class);
+
+        then(inviteCodeProbeThrottle).should(never()).recordFailure(any());
+        then(inviteCodeProbeThrottle).should().reset(2L);
     }
 
     @Test
