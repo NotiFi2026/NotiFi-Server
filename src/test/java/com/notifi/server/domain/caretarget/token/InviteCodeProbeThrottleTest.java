@@ -25,14 +25,14 @@ import static org.mockito.Mockito.never;
  * 이유로 정상 사용자가 막히거나 Redis 장애가 기능 장애로 번지면 안 된다.
  */
 @ExtendWith(MockitoExtension.class)
-class InvitePreviewThrottleTest {
+class InviteCodeProbeThrottleTest {
 
-    private static final String KEY = "invite_preview_fail:7";
+    private static final String KEY = "invite_probe_fail:7";
 
     @Mock StringRedisTemplate redisTemplate;
     @Mock ValueOperations<String, String> valueOps;
 
-    @InjectMocks InvitePreviewThrottle throttle;
+    @InjectMocks InviteCodeProbeThrottle throttle;
 
     @Test
     @DisplayName("실패가 임계 미만이면 통과한다")
@@ -62,25 +62,29 @@ class InvitePreviewThrottleTest {
     }
 
     @Test
-    @DisplayName("첫 실패에만 TTL을 건다 — 창이 계속 밀리면 영구 차단이 된다")
-    void firstFailure_setsWindow() {
+    @DisplayName("키를 만들 때 TTL을 함께 건다 — 만료 없는 키는 영구 차단이 된다")
+    void failure_createsKeyWithWindow() {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
-        given(valueOps.increment(KEY)).willReturn(1L);
 
         throttle.recordFailure(7L);
 
-        then(redisTemplate).should().expire(KEY, Duration.ofMinutes(10));
+        // setIfAbsent가 TTL과 함께 키를 만든 뒤에 증가한다.
+        // "증가 후 1이면 expire"로 짜면 그 사이 expire 실패가 영구 차단으로 남는다
+        then(valueOps).should().setIfAbsent(KEY, "0", Duration.ofMinutes(10));
+        then(valueOps).should().increment(KEY);
     }
 
     @Test
-    @DisplayName("두 번째 실패부터는 TTL을 갱신하지 않는다")
+    @DisplayName("이미 창이 열려 있으면 TTL을 밀지 않는다 — 밀리면 차단이 끝나지 않는다")
     void laterFailure_keepsWindow() {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
-        given(valueOps.increment(KEY)).willReturn(2L);
+        given(valueOps.setIfAbsent(anyString(), anyString(), org.mockito.ArgumentMatchers.any(Duration.class)))
+                .willReturn(false); // 이미 존재 — TTL 유지
 
         throttle.recordFailure(7L);
 
         then(redisTemplate).should(never()).expire(anyString(), org.mockito.ArgumentMatchers.any(Duration.class));
+        then(valueOps).should().increment(KEY);
     }
 
     @Test
