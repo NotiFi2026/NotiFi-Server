@@ -117,28 +117,43 @@ class NotificationQueryServiceTest {
     // ── N2: markRead ─────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("markRead: 미읽음 → status READ·read_at 설정")
-    void markRead_unread_setsStatusAndReadAt() {
+    @DisplayName("markRead: 미읽음 → read_at 설정, 발송 결과(SENT) 보존")
+    void markRead_unread_setsReadAtAndKeepsStatus() {
         Notification n = notification(10L, 1L, 45L, NotificationCategory.EMERGENCY, false);
         given(notificationRepository.findById(10L)).willReturn(Optional.of(n));
 
         notificationQueryService.markRead(1L, 10L);
 
-        assertThat(n.getStatus()).isEqualTo(NotificationStatus.READ);
         assertThat(n.getReadAt()).isNotNull();
+        assertThat(n.getStatus()).isEqualTo(NotificationStatus.SENT);
     }
 
     @Test
-    @DisplayName("markRead: 이미 읽음 → 멱등(status 변경 없음)")
-    void markRead_alreadyRead_noOp() {
-        Notification n = notification(10L, 1L, 45L, NotificationCategory.EMERGENCY, true);
-        NotificationStatus beforeStatus = n.getStatus();
+    @DisplayName("markRead: 발송 실패한 알림을 읽어도 FAILED 기록이 남는다")
+    void markRead_failedNotification_keepsFailedStatus() {
+        // 응급 알림이 폰에 도달하지 못한 사실은 사후 검증에 필요한 기록이다.
+        // 보호자가 앱에서 그 알림을 여는 순간 READ로 덮이면 되짚을 방법이 사라진다.
+        Notification n = notification(10L, 1L, 45L, NotificationCategory.EMERGENCY, false);
+        n.markFailed();
         given(notificationRepository.findById(10L)).willReturn(Optional.of(n));
 
         notificationQueryService.markRead(1L, 10L);
 
-        // markRead()가 다시 불리지 않았으므로 status 변화 없음
-        assertThat(n.getStatus()).isEqualTo(beforeStatus);
+        assertThat(n.getStatus()).isEqualTo(NotificationStatus.FAILED);
+        assertThat(n.getReadAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("markRead: 이미 읽음 → 멱등(read_at 갱신 없음)")
+    void markRead_alreadyRead_noOp() {
+        Notification n = notification(10L, 1L, 45L, NotificationCategory.EMERGENCY, true);
+        Instant firstReadAt = n.getReadAt();
+        given(notificationRepository.findById(10L)).willReturn(Optional.of(n));
+
+        notificationQueryService.markRead(1L, 10L);
+
+        // 최초 읽은 시각이 재호출로 밀리면 안 된다 — 앱은 화면 진입마다 N2를 부른다
+        assertThat(n.getReadAt()).isEqualTo(firstReadAt);
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.InvitePreviewThrottle;
 import com.notifi.server.domain.caretarget.token.RecipientCodePayload;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
@@ -34,6 +35,7 @@ public class RelationshipService {
     private final CareTargetRepository careTargetRepository;
     private final UserRepository userRepository;
     private final InviteCodeStore inviteCodeStore;
+    private final InvitePreviewThrottle invitePreviewThrottle;
     private final CareTargetAccessValidator accessValidator;
 
     @Value("${invite.link-base-url}")
@@ -82,13 +84,28 @@ public class RelationshipService {
 
     // ── R1-c: 초대코드 미리보기 (코드 유지) ────────────────────────────────────
 
+    /**
+     * 코드를 소모하지 않으므로 <b>프로빙 제한이 필요하다</b> — 무제한으로 시도하면 유효한 코드를
+     * 찾아낼 수 있고, 성공하면 노인 이름·초대자 이름이 노출된다. 실패한 조회만 세므로
+     * 링크를 정상적으로 받은 사용자는 걸리지 않는다.
+     */
     @Transactional(readOnly = true)
-    public InvitePreviewResponse previewInviteCode(String code) {
-        InviteCodePayload payload = inviteCodeStore.find(code)
-                .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+    public InvitePreviewResponse previewInviteCode(Long userId, String code) {
+        if (invitePreviewThrottle.isBlocked(userId)) {
+            throw new BusinessException(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+        }
 
+        InviteCodePayload payload = inviteCodeStore.find(code)
+                .orElseThrow(() -> {
+                    invitePreviewThrottle.recordFailure(userId);
+                    return new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE);
+                });
+
+        // 코드는 맞았는데 노인이 지워진 경우다. 코드를 맞힌 것이므로 프로빙으로 세지 않는다
         CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
+
+        invitePreviewThrottle.reset(userId);
 
         String inviterName = userRepository.findById(payload.issuedBy())
                 .map(u -> u.getName())

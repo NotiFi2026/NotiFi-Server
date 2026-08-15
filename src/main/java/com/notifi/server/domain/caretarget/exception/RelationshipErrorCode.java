@@ -18,7 +18,9 @@ public enum RelationshipErrorCode implements ErrorCode {
     CANNOT_DELETE_PRIMARY(HttpStatus.CONFLICT,
             "CANNOT_DELETE_PRIMARY", "주 보호자 연결은 해제할 수 없습니다."),
     INVALID_RECIPIENT_CODE(HttpStatus.NOT_FOUND,
-            "INVALID_RECIPIENT_CODE", "유효하지 않거나 만료된 연결 코드입니다.");
+            "INVALID_RECIPIENT_CODE", "유효하지 않거나 만료된 연결 코드입니다."),
+    TOO_MANY_INVITE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS,
+            "TOO_MANY_INVITE_ATTEMPTS", "초대 코드 조회를 너무 많이 시도했습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String code;

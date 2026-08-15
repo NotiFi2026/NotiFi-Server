@@ -12,6 +12,7 @@ import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.caretarget.token.InviteCodePayload;
 import com.notifi.server.domain.caretarget.token.InviteCodeStore;
+import com.notifi.server.domain.caretarget.token.InvitePreviewThrottle;
 import com.notifi.server.domain.user.entity.Role;
 import com.notifi.server.domain.user.entity.User;
 import com.notifi.server.domain.user.repository.UserRepository;
@@ -46,6 +47,7 @@ class RelationshipServiceTest {
     @Mock CareTargetRepository careTargetRepository;
     @Mock UserRepository userRepository;
     @Mock InviteCodeStore inviteCodeStore;
+    @Mock InvitePreviewThrottle invitePreviewThrottle;
     @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks RelationshipService relationshipService;
@@ -147,7 +149,7 @@ class RelationshipServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(inviter));
         given(inviteCodeStore.expiresAt("AB3CD7EF")).willReturn(Optional.of(expiresAt));
 
-        InvitePreviewResponse resp = relationshipService.previewInviteCode("AB3CD7EF");
+        InvitePreviewResponse resp = relationshipService.previewInviteCode(7L, "AB3CD7EF");
 
         assertThat(resp.careTargetId()).isEqualTo(45L);
         assertThat(resp.careTargetName()).isEqualTo("박순자");
@@ -155,17 +157,36 @@ class RelationshipServiceTest {
         assertThat(resp.relationshipType()).isEqualTo(RelationshipType.FAMILY);
         assertThat(resp.expiresAt()).isEqualTo(expiresAt);
         then(inviteCodeStore).should(never()).findAndDelete(any());
+        // 정상 사용자는 오타 몇 번이 다음 초대까지 따라가면 안 된다
+        then(invitePreviewThrottle).should().reset(7L);
     }
 
     @Test
-    @DisplayName("previewInviteCode: 유효하지 않은 코드 → 404 INVALID_INVITE_CODE")
+    @DisplayName("previewInviteCode: 유효하지 않은 코드 → 404 INVALID_INVITE_CODE + 프로빙 1회 기록")
     void previewInviteCode_invalidCode() {
         given(inviteCodeStore.find("EXPIRED00")).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> relationshipService.previewInviteCode("EXPIRED00"))
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "EXPIRED00"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
+
+        then(invitePreviewThrottle).should().recordFailure(7L);
+    }
+
+    @Test
+    @DisplayName("previewInviteCode: 프로빙 제한 초과 → 429, 코드 조회조차 하지 않는다")
+    void previewInviteCode_throttled() {
+        // 미리보기는 코드를 소모하지 않아 무제한 시도가 가능하다.
+        // 맞히면 노인 이름·초대자 이름이 그대로 나간다
+        given(invitePreviewThrottle.isBlocked(7L)).willReturn(true);
+
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "AB3CD7EF"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(RelationshipErrorCode.TOO_MANY_INVITE_ATTEMPTS);
+
+        then(inviteCodeStore).should(never()).find(any());
     }
 
     @Test
@@ -175,7 +196,7 @@ class RelationshipServiceTest {
         given(inviteCodeStore.find("AB3CD7EF")).willReturn(Optional.of(payload));
         given(careTargetRepository.findById(99L)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> relationshipService.previewInviteCode("AB3CD7EF"))
+        assertThatThrownBy(() -> relationshipService.previewInviteCode(7L, "AB3CD7EF"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
@@ -193,7 +214,7 @@ class RelationshipServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.empty());
         given(inviteCodeStore.expiresAt("AB3CD7EF")).willReturn(Optional.of(expiresAt));
 
-        InvitePreviewResponse resp = relationshipService.previewInviteCode("AB3CD7EF");
+        InvitePreviewResponse resp = relationshipService.previewInviteCode(7L, "AB3CD7EF");
 
         assertThat(resp.careTargetName()).isEqualTo("박순자");
         assertThat(resp.inviterName()).isNull();

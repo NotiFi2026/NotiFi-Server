@@ -50,9 +50,10 @@ public class RelationshipController {
                description = "초대 링크를 클릭한 사용자에게 노인 이름·초대자·관계 유형을 반환한다. 코드를 소모하지 않으므로 수락 전 다이얼로그 표시에 사용한다. (권한: 인증)")
     @GetMapping("/api/v1/invite-codes/{code}")
     public ApiResponse<InvitePreviewResponse> previewInviteCode(
+            @AuthenticationPrincipal Long userId,
             @PathVariable String code
     ) {
-        return ApiResponse.success(relationshipService.previewInviteCode(code));
+        return ApiResponse.success(relationshipService.previewInviteCode(userId, code));
     }
 
     // R1-b: 초대코드 수락 (인증 사용자, 일회성)
