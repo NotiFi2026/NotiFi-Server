@@ -176,6 +176,36 @@ class SensingServiceTest {
         assertThat(since.getValue()).isBefore(Instant.now());
     }
 
+    @Test
+    @DisplayName("ingest: 재사용된 이벤트를 재시도해도 대응 id를 계속 돌려준다")
+    void ingest_idempotentRetryOfReusedEvent_keepsEscalationId() {
+        // AI는 escalation_id로 재신고 억제를 건다. 재시도에서 null을 주면 억제가 풀려
+        // stride(2초)마다 I1이 다시 쏟아진다 — 대응은 하나인데 이벤트만 쌓인다.
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();   // DANGER
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+
+        Escalation ongoing = Escalation.start(99L);
+        ReflectionTestUtils.setField(ongoing, "id", 7L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        // 같은 이벤트가 이미 적재돼 있다 → 멱등 경로
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.of(event));
+        given(riskAssessmentRepository.findBySensingEventId(1L)).willReturn(Optional.of(ra));
+        // 이 위험평가에 붙은 에스컬레이션은 없다(합쳐졌으므로)
+        given(escalationRepository.findByRiskAssessmentId(2L)).willReturn(Optional.empty());
+        given(escalationRepository.findOngoingSince(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any(), any()))
+                .willReturn(List.of(ongoing));
+
+        SensingEventIngestResponse res = sensingService.ingest(dangerRequest());
+
+        assertThat(res.escalationTriggered()).isFalse();
+        assertThat(res.escalationId()).isEqualTo(7L);
+    }
+
     // ── WARNING/SAFE → 에스컬레이션 미생성 ───────────────────────────────────
 
     @Test

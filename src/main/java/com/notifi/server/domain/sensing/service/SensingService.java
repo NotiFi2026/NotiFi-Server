@@ -182,9 +182,27 @@ public class SensingService {
         if (ra == null) {
             return new SensingEventIngestResponse(event.getId(), null, false, null);
         }
-        Optional<Escalation> escalation = escalationRepository.findByRiskAssessmentId(ra.getId());
-        return new SensingEventIngestResponse(
-                event.getId(), ra.getId(),
-                escalation.isPresent(), escalation.map(e -> e.getId()).orElse(null));
+
+        Optional<Escalation> own = escalationRepository.findByRiskAssessmentId(ra.getId());
+        if (own.isPresent()) {
+            return new SensingEventIngestResponse(event.getId(), ra.getId(), true, own.get().getId());
+        }
+
+        // 이 이벤트가 만든 에스컬레이션은 없다. 두 경우가 섞여 있으므로 위험도로 가른다.
+        //
+        // DANGER인데 자기 것이 없다면 **진행 중인 건에 합쳐졌던 이벤트**다. 그때도 대응 id를
+        // 돌려줘야 한다 — AI는 이 값으로 재신고 억제를 걸기 때문에, null을 주면 재시도할 때마다
+        // 억제가 풀려 stride(2초)마다 I1이 다시 쏟아진다.
+        //
+        // DANGER가 아니면 애초에 에스컬레이션이 없는 게 정상이다. 여기서 진행 중 건을 주면
+        // 무관한 이벤트가 남의 대응을 가리킨다.
+        if (shouldEscalate(ra.getRiskLevel())) {
+            Escalation ongoing = findOngoingEscalation(event.getCareTargetId());
+            if (ongoing != null) {
+                return new SensingEventIngestResponse(
+                        event.getId(), ra.getId(), false, ongoing.getId());
+            }
+        }
+        return new SensingEventIngestResponse(event.getId(), ra.getId(), false, null);
     }
 }
