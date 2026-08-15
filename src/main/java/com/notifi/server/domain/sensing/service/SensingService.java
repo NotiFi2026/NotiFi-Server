@@ -26,6 +26,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
@@ -35,6 +36,9 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class SensingService {
+
+    /** 같은 낙상으로 보고 대응을 재사용하는 기간. {@link #findOngoingEscalation} 참고. */
+    private static final Duration ONGOING_WINDOW = Duration.ofMinutes(5);
 
     private final SensingEventRepository sensingEventRepository;
     private final RiskAssessmentRepository riskAssessmentRepository;
@@ -113,11 +117,22 @@ public class SensingService {
         return new SensingEventIngestResponse(event.getId(), ra.getId(), false, null);
     }
 
-    /** 이 노인에게 진행 중인 에스컬레이션(가장 먼저 시작된 것). 없으면 null. */
+    /**
+     * 지금 대응이 돌고 있는 에스컬레이션. 없으면 null.
+     *
+     * <p><b>기한을 두는 이유</b>: 119 단계까지 간 에스컬레이션은 사람이 앱에서 닫을 때까지
+     * IN_PROGRESS로 남는다(에이전트가 스스로 종결하지 않는다 — 구급대 도착 여부를 서버가 알 수
+     * 없기 때문). 그걸 기한 없이 "대응 중"으로 보면 몇 시간 뒤의 진짜 낙상이 새 에스컬레이션도
+     * 못 만들고 조용히 묻힌다. 겹치는 윈도를 막으려다 응급을 막는 셈이다.
+     *
+     * <p>창은 한 번의 낙상이 만드는 겹침(윈도 10초·stride 2초)과 대응 흐름(음성확인 → 60초 대기
+     * → 119)을 덮을 만큼이면 충분하다.
+     */
     private Escalation findOngoingEscalation(Long careTargetId) {
         return escalationRepository
-                .findOldestByCareTargetIdAndStatus(
-                        careTargetId, EscalationStatus.IN_PROGRESS, PageRequest.of(0, 1))
+                .findOngoingSince(
+                        careTargetId, EscalationStatus.IN_PROGRESS,
+                        Instant.now().minus(ONGOING_WINDOW), PageRequest.of(0, 1))
                 .stream()
                 .findFirst()
                 .orElse(null);

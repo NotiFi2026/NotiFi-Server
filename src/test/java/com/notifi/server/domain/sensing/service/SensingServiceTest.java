@@ -99,8 +99,8 @@ class SensingServiceTest {
                 1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
         given(sensingEventRepository.save(any())).willReturn(event);
         given(riskAssessmentRepository.save(any())).willReturn(ra);
-        given(escalationRepository.findOldestByCareTargetIdAndStatus(
-                eq(1L), eq(EscalationStatus.IN_PROGRESS), any()))
+        given(escalationRepository.findOngoingSince(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any(), any()))
                 .willReturn(List.of(ongoing));
 
         SensingEventIngestResponse res = sensingService.ingest(dangerRequest());
@@ -129,8 +129,8 @@ class SensingServiceTest {
                 1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
         given(sensingEventRepository.save(any())).willReturn(event);
         given(riskAssessmentRepository.save(any())).willReturn(ra);
-        given(escalationRepository.findOldestByCareTargetIdAndStatus(
-                eq(1L), eq(EscalationStatus.IN_PROGRESS), any()))
+        given(escalationRepository.findOngoingSince(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any(), any()))
                 .willReturn(List.of());   // 진행 중 없음
         given(escalationRepository.save(any())).willReturn(created);
 
@@ -138,6 +138,42 @@ class SensingServiceTest {
 
         assertThat(res.escalationTriggered()).isTrue();
         assertThat(res.escalationId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("ingest: 재사용 판단은 최근 건만 본다 — 오래된 미해소 건이 새 응급을 막으면 안 된다")
+    void ingest_danger_onlyReusesRecentEscalation() {
+        // 119까지 간 에스컬레이션은 사람이 앱에서 닫을 때까지 IN_PROGRESS로 남는다.
+        // 기한 없이 "대응 중"으로 보면 몇 시간 뒤의 진짜 낙상이 조용히 묻힌다.
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        Escalation created = Escalation.start(2L);
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+        ReflectionTestUtils.setField(created, "id", 9L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+        // 오래된 건은 조회 자체에서 빠진다(startedAt >= since) — 저장소가 빈 목록을 준다
+        given(escalationRepository.findOngoingSince(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any(), any()))
+                .willReturn(List.of());
+        given(escalationRepository.save(any())).willReturn(created);
+
+        SensingEventIngestResponse res = sensingService.ingest(dangerRequest());
+
+        assertThat(res.escalationTriggered()).isTrue();
+        assertThat(res.escalationId()).isEqualTo(9L);
+
+        // 조회 기준 시각이 "지금"보다 과거여야 한다 — 창이 0이면 항상 새로 만들고,
+        // 미래면 아무것도 못 찾아 dedup이 죽는다
+        ArgumentCaptor<Instant> since = ArgumentCaptor.forClass(Instant.class);
+        then(escalationRepository).should().findOngoingSince(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), since.capture(), any());
+        assertThat(since.getValue()).isBefore(Instant.now());
     }
 
     // ── WARNING/SAFE → 에스컬레이션 미생성 ───────────────────────────────────
