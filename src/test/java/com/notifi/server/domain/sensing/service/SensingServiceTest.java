@@ -3,6 +3,7 @@ package com.notifi.server.domain.sensing.service;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.entity.Escalation;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.sensing.dto.PoseClipIngestRequest;
 import com.notifi.server.domain.sensing.dto.PoseClipIngestResponse;
@@ -25,6 +26,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +35,7 @@ import org.mockito.ArgumentCaptor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -76,6 +79,65 @@ class SensingServiceTest {
         assertThat(res.escalationTriggered()).isTrue();
         assertThat(res.escalationId()).isEqualTo(3L);
         then(escalationRepository).should().save(any(Escalation.class));
+    }
+
+    @Test
+    @DisplayName("ingest: 이미 진행 중인 에스컬레이션이 있으면 새로 만들지 않고 기존 건을 가리킨다")
+    void ingest_danger_whileEscalationInProgress_doesNotCreateAnother() {
+        // 낙상 한 번에 겹치는 윈도가 여러 개 나온다. 그때마다 새로 만들면 음성 확인이
+        // 처음부터 다시 시작되고("괜찮다고 했는데 또 물어본다") 119 단계도 중복으로 걸린다.
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+
+        Escalation ongoing = Escalation.start(99L);
+        ReflectionTestUtils.setField(ongoing, "id", 7L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+        given(escalationRepository.findOldestByCareTargetIdAndStatus(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any()))
+                .willReturn(List.of(ongoing));
+
+        SensingEventIngestResponse res = sensingService.ingest(dangerRequest());
+
+        // 이벤트·위험도는 그대로 적재된다 — 기록을 버리는 게 아니라 대응만 겹치지 않게 한다
+        assertThat(res.sensingEventId()).isEqualTo(1L);
+        assertThat(res.riskAssessmentId()).isEqualTo(2L);
+        // AI 에이전트는 이 플래그로 새 대응 흐름을 시작할지 판단한다
+        assertThat(res.escalationTriggered()).isFalse();
+        assertThat(res.escalationId()).isEqualTo(7L);
+        then(escalationRepository).should(never()).save(any(Escalation.class));
+    }
+
+    @Test
+    @DisplayName("ingest: 앞 건이 해소된 뒤의 DANGER는 새 에스컬레이션을 만든다")
+    void ingest_danger_afterResolved_createsNewEscalation() {
+        SensingEvent event = sensingEvent();
+        RiskAssessment ra = riskAssessment();
+        Escalation created = Escalation.start(2L);
+        ReflectionTestUtils.setField(event, "id", 1L);
+        ReflectionTestUtils.setField(ra, "id", 2L);
+        ReflectionTestUtils.setField(created, "id", 8L);
+
+        given(careTargetRepository.existsById(1L)).willReturn(true);
+        given(sensingEventRepository.findByCareTargetIdAndDetectedAtAndEventType(
+                1L, DETECTED_AT, EventType.FALL)).willReturn(Optional.empty());
+        given(sensingEventRepository.save(any())).willReturn(event);
+        given(riskAssessmentRepository.save(any())).willReturn(ra);
+        given(escalationRepository.findOldestByCareTargetIdAndStatus(
+                eq(1L), eq(EscalationStatus.IN_PROGRESS), any()))
+                .willReturn(List.of());   // 진행 중 없음
+        given(escalationRepository.save(any())).willReturn(created);
+
+        SensingEventIngestResponse res = sensingService.ingest(dangerRequest());
+
+        assertThat(res.escalationTriggered()).isTrue();
+        assertThat(res.escalationId()).isEqualTo(8L);
     }
 
     // ── WARNING/SAFE → 에스컬레이션 미생성 ───────────────────────────────────

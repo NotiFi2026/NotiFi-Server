@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,4 +42,29 @@ public interface EscalationRepository extends JpaRepository<Escalation, Long> {
     List<Escalation> findByCareTargetIdAndStatus(@Param("ctId") Long careTargetId,
                                                  @Param("status") EscalationStatus status,
                                                  Pageable pageable);
+
+    /**
+     * C2 목록에서 "응급이 진행 중인 노인"을 한 번에 가려낸다.
+     *
+     * <p>노인마다 {@link #findByCareTargetIdAndStatus}를 부르면 목록 크기만큼 쿼리가 늘어난다.
+     * 표시용 보정 하나 때문에 N+1을 만들 이유가 없다.
+     */
+    @Query("SELECT DISTINCT se.careTargetId FROM Escalation e, RiskAssessment ra, SensingEvent se "
+            + "WHERE e.riskAssessmentId = ra.id AND ra.sensingEventId = se.id "
+            + "AND se.careTargetId IN :ctIds AND e.status = :status")
+    List<Long> findCareTargetIdsWithStatus(@Param("ctIds") Collection<Long> careTargetIds,
+                                           @Param("status") EscalationStatus status);
+
+    /**
+     * I1이 새 에스컬레이션을 만들기 전에 확인하는 "이미 대응 중인가".
+     *
+     * <p>{@link #findByCareTargetIdAndStatus}와 달리 정렬·페이징이 없다 — 존재 여부만 보면 되고,
+     * 재사용할 때는 가장 오래된(먼저 시작된) 것을 잡아야 대응 흐름이 갈라지지 않는다.
+     */
+    @Query("SELECT e FROM Escalation e, RiskAssessment ra, SensingEvent se "
+            + "WHERE e.riskAssessmentId = ra.id AND ra.sensingEventId = se.id "
+            + "AND se.careTargetId = :ctId AND e.status = :status ORDER BY e.startedAt ASC")
+    List<Escalation> findOldestByCareTargetIdAndStatus(@Param("ctId") Long careTargetId,
+                                                       @Param("status") EscalationStatus status,
+                                                       Pageable pageable);
 }

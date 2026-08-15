@@ -3,6 +3,7 @@ package com.notifi.server.domain.sensing.service;
 import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.escalation.entity.Escalation;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
 import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.sensing.dto.PoseClipIngestRequest;
 import com.notifi.server.domain.sensing.dto.PoseClipIngestResponse;
@@ -21,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,11 +92,35 @@ public class SensingService {
         ));
 
         if (shouldEscalate(req.riskLevel())) {
+            Escalation ongoing = findOngoingEscalation(req.careTargetId());
+            if (ongoing != null) {
+                // 이미 대응이 돌고 있다 — 겹쳐 시작하지 않는다.
+                //
+                // 낙상 한 번에 겹치는 윈도가 여러 개 나오고, 그때마다 새 에스컬레이션을 만들면
+                // 음성 확인이 처음부터 다시 시작되고("괜찮다고 했는데 또 물어본다") 119 단계도
+                // 중복으로 걸린다. AI 서버에 쿨다운이 있지만 그건 그쪽 사정이고,
+                // 여기가 최종 방어선이어야 한다.
+                //
+                // escalation_triggered=false로 답하는 것이 핵심이다 — AI 에이전트는 이 값으로
+                // 새 대응 흐름을 시작할지 판단한다. id는 함께 주어 호출자가 진행 중인 건을
+                // 가리킬 수 있게 한다.
+                return new SensingEventIngestResponse(event.getId(), ra.getId(), false, ongoing.getId());
+            }
             Escalation escalation = escalationRepository.save(Escalation.start(ra.getId()));
             return new SensingEventIngestResponse(event.getId(), ra.getId(), true, escalation.getId());
         }
 
         return new SensingEventIngestResponse(event.getId(), ra.getId(), false, null);
+    }
+
+    /** 이 노인에게 진행 중인 에스컬레이션(가장 먼저 시작된 것). 없으면 null. */
+    private Escalation findOngoingEscalation(Long careTargetId) {
+        return escalationRepository
+                .findOldestByCareTargetIdAndStatus(
+                        careTargetId, EscalationStatus.IN_PROGRESS, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElse(null);
     }
 
     @Transactional

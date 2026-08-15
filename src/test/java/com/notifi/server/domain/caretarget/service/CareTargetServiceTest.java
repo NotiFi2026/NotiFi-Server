@@ -13,6 +13,8 @@ import com.notifi.server.domain.caretarget.exception.CareTargetErrorCode;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.sensing.entity.EventType;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
@@ -54,6 +56,7 @@ class CareTargetServiceTest {
     @Mock DeviceRepository deviceRepository;
     @Mock SensingEventRepository sensingEventRepository;
     @Mock RiskAssessmentRepository riskAssessmentRepository;
+    @Mock EscalationRepository escalationRepository;
     @Mock CareTargetAccessValidator accessValidator;
 
     @InjectMocks CareTargetService careTargetService;
@@ -187,6 +190,38 @@ class CareTargetServiceTest {
         CareTargetSummaryResponse summary = result.content().get(0);
         assertThat(summary.currentRiskLevel()).isEqualTo(RiskLevel.DANGER);
         assertThat(summary.lastEventAt()).isEqualTo(detectedAt);
+    }
+
+    @Test
+    @DisplayName("getMyCareTargets: 응급 진행 중인 노인은 최신 이벤트가 SAFE여도 DANGER로 올린다")
+    void getMyCareTargets_activeEscalation_promotesRiskToDanger() {
+        // 이 응답에는 active_escalation 필드가 없어 앱이 스스로 보정할 방법이 없다.
+        // 응급이 도는 노인이 목록에서 초록 카드로 보이면 안 된다.
+        CareTarget ct = CareTarget.create("박순자", null, Gender.FEMALE, null, null);
+        ReflectionTestUtils.setField(ct, "id", 45L);
+        CareRelationship cr = CareRelationship.of(1L, ct, RelationshipType.FAMILY, true, (short) 1);
+
+        java.time.Instant detectedAt = java.time.Instant.parse("2026-08-15T13:36:56Z");
+        SensingEvent latest = SensingEvent.create(45L, null, EventType.NORMAL, null,
+                null, null, null, null, "v1", null, detectedAt);
+        ReflectionTestUtils.setField(latest, "id", 5L);
+        RiskAssessment ra = RiskAssessment.of(5L, (short) 5, RiskLevel.SAFE, null, "v1", detectedAt);
+
+        PageRequest pageable = PageRequest.of(0, 20);
+        given(careRelationshipRepository.findByUserIdWithCareTarget(1L, pageable))
+                .willReturn(new PageImpl<>(List.of(cr), pageable, 1));
+        given(deviceRepository.deviceCountMap(List.of(45L))).willReturn(Map.of());
+        given(sensingEventRepository.findLatestPerCareTarget(List.of(45L))).willReturn(List.of(latest));
+        given(riskAssessmentRepository.findBySensingEventIdIn(List.of(5L))).willReturn(List.of(ra));
+        given(escalationRepository.findCareTargetIdsWithStatus(
+                List.of(45L), EscalationStatus.IN_PROGRESS)).willReturn(List.of(45L));
+
+        PageResponse<CareTargetSummaryResponse> result = careTargetService.getMyCareTargets(1L, pageable);
+
+        assertThat(result.content().get(0).currentRiskLevel()).isEqualTo(RiskLevel.DANGER);
+        // 목록 크기와 무관하게 조회는 한 번 — 표시 보정 때문에 N+1을 만들지 않는다
+        then(escalationRepository).should()
+                .findCareTargetIdsWithStatus(List.of(45L), EscalationStatus.IN_PROGRESS);
     }
 
     // ── getDetail (C3) ────────────────────────────────────────────────────

@@ -11,6 +11,8 @@ import com.notifi.server.domain.caretarget.entity.RelationshipType;
 import com.notifi.server.domain.caretarget.repository.CareRelationshipRepository;
 import com.notifi.server.domain.caretarget.repository.CareTargetRepository;
 import com.notifi.server.domain.device.repository.DeviceRepository;
+import com.notifi.server.domain.escalation.entity.EscalationStatus;
+import com.notifi.server.domain.escalation.repository.EscalationRepository;
 import com.notifi.server.domain.sensing.entity.RiskAssessment;
 import com.notifi.server.domain.sensing.entity.RiskLevel;
 import com.notifi.server.domain.sensing.entity.SensingEvent;
@@ -30,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +45,7 @@ public class CareTargetService {
     private final DeviceRepository deviceRepository;
     private final SensingEventRepository sensingEventRepository;
     private final RiskAssessmentRepository riskAssessmentRepository;
+    private final EscalationRepository escalationRepository;
     private final CareTargetAccessValidator accessValidator;
 
     @Transactional
@@ -94,13 +98,22 @@ public class CareTargetService {
                         .stream()
                         .collect(Collectors.toMap(RiskAssessment::getSensingEventId, RiskAssessment::getRiskLevel));
 
+        // 응급이 진행 중인 노인 — 최신 이벤트가 이미 SAFE로 돌아왔어도 목록이 초록이면 안 된다.
+        // 이 응답에는 active_escalation 필드가 없어 앱이 스스로 보정할 방법도 없다(S1과 다른 점).
+        Set<Long> escalatingIds = careTargetIds.isEmpty()
+                ? Set.of()
+                : Set.copyOf(escalationRepository
+                        .findCareTargetIdsWithStatus(careTargetIds, EscalationStatus.IN_PROGRESS));
+
         Page<CareTargetSummaryResponse> mapped = page.map(cr -> {
             Long ctId = cr.getCareTarget().getId();
             SensingEvent latest = latestEventMap.get(ctId);
+            RiskLevel latestRisk = latest == null ? null : riskLevelMap.get(latest.getId());
             return CareTargetSummaryResponse.from(
                     cr,
                     countMap.getOrDefault(ctId, 0),
-                    latest == null ? null : riskLevelMap.get(latest.getId()),
+                    // 승격만 하고 강등하지 않는다 (S1과 같은 규칙)
+                    escalatingIds.contains(ctId) ? RiskLevel.DANGER : latestRisk,
                     latest == null ? null : latest.getDetectedAt());
         });
         return PageResponse.from(mapped);
