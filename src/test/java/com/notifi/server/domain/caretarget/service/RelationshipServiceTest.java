@@ -190,8 +190,10 @@ class RelationshipServiceTest {
     }
 
     @Test
-    @DisplayName("previewInviteCode: 노인이 삭제된 경우 → 404 INVALID_INVITE_CODE")
-    void previewInviteCode_careTargetGone() {
+    @DisplayName("previewInviteCode: 노인이 삭제된 경우 → 404 INVALID_INVITE_CODE, 단 카운터는 초기화")
+    void previewInviteCode_careTargetGone_stillResetsCounter() {
+        // 코드는 맞힌 사람이다. 여기서 카운터를 남기면 9회 실패한 사용자가
+        // 유효하지만 삭제된 링크를 한 번 확인한 뒤 다음 오타 한 번에 차단된다
         InviteCodePayload payload = new InviteCodePayload(99L, RelationshipType.FAMILY, (short) 1, 1L);
         given(inviteCodeStore.find("AB3CD7EF")).willReturn(Optional.of(payload));
         given(careTargetRepository.findById(99L)).willReturn(Optional.empty());
@@ -200,6 +202,9 @@ class RelationshipServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(RelationshipErrorCode.INVALID_INVITE_CODE);
+
+        then(inviteCodeProbeThrottle).should().reset(7L);
+        then(inviteCodeProbeThrottle).should(never()).recordFailure(any());
     }
 
     @Test

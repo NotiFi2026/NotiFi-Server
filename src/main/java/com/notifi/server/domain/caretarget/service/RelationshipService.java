@@ -100,12 +100,13 @@ public class RelationshipService {
             inviteCodeProbeThrottle.recordFailure(userId);
             throw new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE);
         }
+        // 코드를 맞혔다 — 아래에서 어떤 이유로 실패하든 무차별 시도는 아니다.
+        // 노인이 지워진 링크를 확인했다는 이유로 이전 실패 횟수가 남으면,
+        // 그 사용자는 다음 오타 한 번에 차단된다
+        inviteCodeProbeThrottle.reset(userId);
 
-        // 코드는 맞았는데 노인이 지워진 경우다. 코드를 맞힌 것이므로 프로빙으로 세지 않는다
         CareTarget careTarget = careTargetRepository.findById(payload.careTargetId())
                 .orElseThrow(() -> new BusinessException(RelationshipErrorCode.INVALID_INVITE_CODE));
-
-        inviteCodeProbeThrottle.reset(userId);
 
         String inviterName = userRepository.findById(payload.issuedBy())
                 .map(u -> u.getName())
