@@ -89,7 +89,15 @@ public class SensingQueryService {
 
         return new CareTargetStatusResponse(
                 careTargetId,
-                currentRiskLevel,
+                // 응급이 진행 중이면 위험도를 DANGER로 올린다.
+                //
+                // 최신 이벤트 하나만 보면 낙상 직후 사람이 조금만 움직여도 곧바로 SAFE가 들어와
+                // (실측: 낙상 18초 뒤 WALKING/SAFE) 대시보드가 초록으로 돌아간다. 그 화면에는
+                // 응급 콘솔이 함께 떠 있으므로 "정상이에요"와 진행 중인 음성 확인이 동시에 보인다.
+                // 필드 이름이 current_risk_level(현재 위험도)인 이상 진행 중인 응급이 답이다.
+                //
+                // 승격만 하고 강등하지 않는다 — 위험을 낮게 표시하는 쪽이 언제나 더 위험하다.
+                activeEscalation != null ? RiskLevel.DANGER : currentRiskLevel,
                 lastActivityAt,
                 null,    // todayMetrics: tb_activity_aggregate 미구현
                 devices,

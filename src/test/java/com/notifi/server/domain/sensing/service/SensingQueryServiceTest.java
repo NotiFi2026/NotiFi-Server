@@ -119,6 +119,54 @@ class SensingQueryServiceTest {
     }
 
     @Test
+    @DisplayName("getStatus: 응급 진행 중이면 최신 이벤트가 SAFE여도 currentRiskLevel=DANGER")
+    void getStatus_activeEscalation_promotesRiskToDanger() {
+        // 낙상 직후 사람이 조금만 움직여도 SAFE 이벤트가 곧바로 들어온다(실측: 18초 뒤 WALKING).
+        // 최신 이벤트만 보면 응급이 도는 동안 대시보드가 초록으로 돌아가, 같은 화면에 뜬
+        // 응급 콘솔과 "정상이에요"가 동시에 보인다.
+        SensingEvent event = SensingEvent.create(45L, null, EventType.NORMAL, null,
+                null, null, null, null, "v1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 1L);
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
+                .willReturn(Optional.of(event));
+        given(riskAssessmentRepository.findBySensingEventId(1L))
+                .willReturn(Optional.of(RiskAssessment.of(1L, (short) 5, RiskLevel.SAFE, null, "v1", DETECTED_AT)));
+        given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
+
+        Escalation escalation = Escalation.start(1L);
+        ReflectionTestUtils.setField(escalation, "id", 30L);
+        given(escalationRepository.findByCareTargetIdAndStatus(
+                eq(45L), eq(EscalationStatus.IN_PROGRESS), any()))
+                .willReturn(List.of(escalation));
+        given(escalationStepRepository.findFirstByEscalationIdOrderByStepOrderDesc(30L))
+                .willReturn(Optional.empty());
+
+        CareTargetStatusResponse result = sensingQueryService.getStatus(1L, 45L);
+
+        assertThat(result.currentRiskLevel()).isEqualTo(RiskLevel.DANGER);
+        assertThat(result.activeEscalation()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("getStatus: 응급이 없으면 승격하지 않는다 — 최신 이벤트 값 그대로")
+    void getStatus_noEscalation_keepsLatestEventRisk() {
+        // 승격만 하고 강등도 하지 않는다. DANGER 이벤트는 에스컬레이션 없이도 DANGER다.
+        SensingEvent event = SensingEvent.create(45L, null, EventType.FALL, null,
+                null, null, null, null, "v1", null, DETECTED_AT);
+        ReflectionTestUtils.setField(event, "id", 1L);
+        given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
+                .willReturn(Optional.of(event));
+        given(riskAssessmentRepository.findBySensingEventId(1L))
+                .willReturn(Optional.of(RiskAssessment.of(1L, (short) 90, RiskLevel.DANGER, null, "v1", DETECTED_AT)));
+        given(deviceRepository.findByCareTargetIdOrderByRegisteredAtAsc(45L)).willReturn(List.of());
+
+        CareTargetStatusResponse result = sensingQueryService.getStatus(1L, 45L);
+
+        assertThat(result.currentRiskLevel()).isEqualTo(RiskLevel.DANGER);
+        assertThat(result.activeEscalation()).isNull();
+    }
+
+    @Test
     @DisplayName("getStatus: 이벤트 없으면 currentRiskLevel·lastActivityAt null")
     void getStatus_noEvents_returnsNullRisk() {
         given(sensingEventRepository.findFirstByCareTargetIdOrderByDetectedAtDescIdDesc(45L))
