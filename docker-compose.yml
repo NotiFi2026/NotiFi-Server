@@ -6,8 +6,12 @@ services:
       POSTGRES_DB: ${DB_NAME:-notifi}
       POSTGRES_USER: ${DB_USERNAME:-notifi}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-notifi}
+    # 루프백에만 연다. "5432:5432"는 0.0.0.0 바인딩이라, 개발 PC가 공인 IP에 직결된
+    # 환경에서는 DB가 그대로 인터넷에 열린다 — 실제로 무차별 로그인 시도를 받았다
+    # (postgres·wog·pgg_superadmins 등 154회). 호스트에서 도는 bootRun은 localhost로 붙으므로
+    # 영향이 없고, compose의 app 컨테이너는 도커 네트워크(서비스명)로 붙어 역시 무관하다.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,8 +24,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: notifi-redis
+    # Redis는 기본적으로 비밀번호가 없다. 인터넷에 열리면 인증 없이 누구나 붙는다 —
+    # 2026-08-15 실제로 침입당해 FLUSHALL로 데이터가 날아갔고(초대·연결코드·리프레시 토큰),
+    # 크론 인젝션 페이로드(backup1~4 키)까지 심어졌다. 컨테이너에 crond가 없어 RCE는 실패했다.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
